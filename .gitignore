@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+quantum_nexus_forge.db
+turbo_state.json
