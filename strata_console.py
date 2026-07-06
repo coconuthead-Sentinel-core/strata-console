@@ -418,7 +418,7 @@ class StrataPipeline:
         self.output_node = OutputSynthNode()
         self.brain = LLMBrain()  # local LLM; falls back to template mode if unavailable
 
-    def process_input(self, user_input):
+    def process_input(self, user_input, extra_context=""):
         input_data = self.input_node.process(user_input)
         input_data["zone"] = self.current_zone  # thread mode so PersonaNode can style by it
         routed = self.router_node.route(input_data)
@@ -428,12 +428,18 @@ class StrataPipeline:
 
         # Primary path: hand the full context to the local LLM. The template
         # output above remains as the structured fallback / telemetry.
+        context = memory_data.get("context", "")
+        if extra_context:
+            # App-retrieved grounding (web results, OneDrive passages, an
+            # attached document) rides alongside the conversation memory.
+            context = (context + "\n\nAdditional context (web/files):\n"
+                       + extra_context[:6000])
         reply = self.brain.respond(
             user_input,
             self.current_zone,
             persona.get("tone", {}),
             input_data.get("glyph_meanings", []),
-            memory_data.get("context", ""),
+            context,
         )
         output["response"] = reply          # None when running in template mode
         output["brain"] = self.brain.available
@@ -556,6 +562,22 @@ class StrataConsole:
         self.size_label = ctk.CTkLabel(access, text=f"{self.font_size}pt")
         self.size_label.pack(side="left", padx=(8, 6), pady=6)
 
+        # --- Floating toolbar (ported from Sentinel Forge): 🎤 dictation,
+        #     🔊 read-aloud with speed, ❓ tour, dockable/floatable. ---
+        self.quality_var = ctk.StringVar(value="Fast")
+        self.speed_var = ctk.StringVar(value="Normal")
+        self._tb_docked = True
+        self._tb_win = None
+        self._tb_drag = (0, 0)
+        self._rec_stream = None
+        self._rec_frames = []
+        self._read_proc = None
+        self._last_reply = ""
+        self._attachment = None
+        self._tb_host = ctk.CTkFrame(self.root)
+        self._tb_host.pack(side="top", fill="x", padx=16, pady=(0, 4))
+        self._build_toolbar_widgets(self._tb_host)
+
         # --- Bottom controls are packed FIRST and pinned to the bottom, so they
         #     are ALWAYS visible no matter how tall the content or window is. ---
         input_frame = ctk.CTkFrame(self.root)
@@ -568,6 +590,25 @@ class StrataConsole:
 
         self.send_btn = ctk.CTkButton(input_frame, text="Send", command=self.send_message, width=100)
         self.send_btn.pack(side="left", padx=(0, 10), pady=8)
+
+        # --- Context sources: give the model eyes (web) and reading
+        #     access (OneDrive + uploaded documents). ---
+        sources = ctk.CTkFrame(self.root)
+        sources.pack(side="bottom", fill="x", padx=16, pady=(2, 0))
+        self.web_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(sources, text="🌐 Web search", variable=self.web_var,
+                        ).pack(side="left", padx=(10, 8), pady=6)
+        self.onedrive_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(sources, text="☁ OneDrive files",
+                        variable=self.onedrive_var,
+                        command=self._onedrive_toggled,
+                        ).pack(side="left", padx=(0, 8), pady=6)
+        ctk.CTkButton(sources, text="📎 Upload document", width=150,
+                      command=self._upload_document).pack(side="left",
+                                                          padx=(0, 8), pady=6)
+        self.attach_label = ctk.CTkLabel(sources, text="", anchor="w")
+        self.attach_label.pack(side="left", fill="x", expand=True, pady=6)
+        self.attach_label.bind("<Button-1>", lambda _e: self._clear_attachment())
 
         button_frame = ctk.CTkFrame(self.root)
         button_frame.pack(side="bottom", fill="x", padx=16, pady=(4, 0))
@@ -590,7 +631,9 @@ class StrataConsole:
         self.output_box.pack(side="top", fill="both", expand=True, padx=16, pady=6)
         if self.pipeline.brain.available:
             banner = (f"Strata Console online — local model active ({self.pipeline.brain.model}).\n"
-                      "Chat, planning, and code. 100% offline. Type below.\n\n")
+                      "Chat, planning, and code — local-first. Ask me to \"search the web for …\",\n"
+                      "check ☁ OneDrive files to let me read your documents, or 📎 upload a file.\n"
+                      "🎤 dictate and 🔊 listen from the toolbar above. Type below.\n\n")
         else:
             banner = ("Strata Console — template mode.\n"
                       f"Local model offline: {self.pipeline.brain.last_error}.\n"
@@ -616,19 +659,39 @@ class StrataConsole:
             self.status_label.configure(text=self.pipeline.get_status())
             return
 
+        # Context sources: checked boxes, or natural phrasing — asking
+        # Strata to search should just WORK.
+        use_web = bool(self.web_var.get())
+        use_onedrive = bool(self.onedrive_var.get())
+        low = user_input.lower()
+        if not use_web:
+            for phrase in ("search the web", "search the internet",
+                           "search online", "web search", "look online",
+                           "look this up", "look up online",
+                           "check the internet", "check online",
+                           "google ", "on the internet"):
+                if phrase in low:
+                    use_web = True
+                    break
+
         # Conversational input → run the (possibly slow, CPU-bound) pipeline off the
         # UI thread so the window stays responsive while the local model thinks.
         self._append_output(f"You: {user_input}")
         self._set_busy(True)
-        self.status_label.configure(text="thinking (local model)…")
+        busy = "🔎 searching…" if (use_web or use_onedrive or self._attachment) \
+            else "thinking (local model)…"
+        self.status_label.configure(text=busy)
         threading.Thread(
-            target=self._process_async, args=(user_input,), daemon=True
+            target=self._process_async,
+            args=(user_input, use_web, use_onedrive), daemon=True
         ).start()
 
-    def _process_async(self, user_input):
+    def _process_async(self, user_input, use_web=False, use_onedrive=False):
         """Runs in a worker thread; hands results back to the UI thread via .after()."""
         try:
-            output = self.pipeline.process_input(user_input)
+            extra = self._gather_context(user_input, use_web, use_onedrive)
+            output = self.pipeline.process_input(user_input,
+                                                 extra_context=extra)
         except Exception as e:
             output = {"error": f"{type(e).__name__}: {e}"}
         self.root.after(0, self._deliver, output)
@@ -639,6 +702,7 @@ class StrataConsole:
             self._append_output(f"⚠️ {output['error']}")
         elif output.get("response"):
             # Real LLM answer is the headline; closing is a small mode marker.
+            self._last_reply = output["response"]     # for 🔊 Read
             self._append_output(f"Strata: {output['response']}")
             self._append_output(output.get('closing', ''))
         else:
@@ -657,6 +721,425 @@ class StrataConsole:
         self.send_btn.configure(state=state)
         if not busy:
             self.input_box.focus_set()
+
+
+    # ═══ Floating toolbar (ported from Sentinel Forge) ═════════════════════
+    _WHISPER_MODELS = {"Fast": "base.en", "Accurate": "small.en",
+                       "Best": "medium.en"}
+    _READ_SPEEDS = {"🐢 Slowest": -5, "🐢 Slower": -2, "Normal": 0,
+                    "🐇 Faster": 2}
+
+    def _build_toolbar_widgets(self, parent):
+        for ch in list(parent.winfo_children()):
+            try:
+                ch.destroy()
+            except Exception:
+                pass
+        grip = ctk.CTkLabel(parent, text="⋮⋮", width=22, cursor="fleur")
+        grip.pack(side="left", padx=(10, 2), pady=6)
+        grip.bind("<ButtonPress-1>", self._tb_drag_start)
+        grip.bind("<B1-Motion>", self._tb_drag_move)
+        ctk.CTkLabel(parent, text="Quality:").pack(side="left", padx=(6, 2))
+        q_menu = ctk.CTkOptionMenu(parent, width=110,
+                                   values=list(self._WHISPER_MODELS),
+                                   variable=self.quality_var)
+        q_menu.pack(side="left", padx=(0, 6), pady=6)
+        self.voice_btn = ctk.CTkButton(parent, text="🎤 Voice", width=92,
+                                       command=self._toggle_voice)
+        self.voice_btn.pack(side="left", padx=(0, 6), pady=6)
+        self.read_btn = ctk.CTkButton(parent, text="🔊 Read", width=84,
+                                      command=self._toggle_read)
+        self.read_btn.pack(side="left", padx=(0, 6), pady=6)
+        ctk.CTkLabel(parent, text="Speed:").pack(side="left", padx=(4, 2))
+        s_menu = ctk.CTkOptionMenu(parent, width=110,
+                                   values=list(self._READ_SPEEDS),
+                                   variable=self.speed_var)
+        s_menu.pack(side="left", padx=(0, 6), pady=6)
+        self._tb_dock_btn = ctk.CTkButton(
+            parent, text=("⇱ Undock" if self._tb_docked else "⇲ Dock"),
+            width=90, command=self._tb_toggle_dock)
+        self._tb_dock_btn.pack(side="right", padx=(4, 10), pady=6)
+        tour_btn = ctk.CTkButton(parent, text="❓ Tour", width=76,
+                                 command=self._show_tour)
+        tour_btn.pack(side="right", padx=(4, 2), pady=6)
+        # Tour registry: (widget, title, text) — flashed in order.
+        self._tour_items = [
+            (grip, "⋮⋮  Drag grip",
+             "When the bar is floating, hold this grip and drag to move it."),
+            (q_menu, "Quality picker",
+             "How carefully the microphone listens. Fast types quickest; "
+             "Best is most accurate but slower."),
+            (self.voice_btn, "🎤 Voice",
+             "Click, speak your message, then click ■ Stop — your words are "
+             "typed into the message box for you."),
+            (self.read_btn, "🔊 Read",
+             "Reads Strata's last reply aloud so you can listen instead of "
+             "read. Click again to stop."),
+            (s_menu, "🐢 / 🐇 Reading speed",
+             "How fast the voice reads. Pick 🐢 Slower if the words sound "
+             "rushed."),
+            (tour_btn, "❓ Tour",
+             "This walkthrough — open it any time."),
+            (self._tb_dock_btn, "⇱ / ⇲ Dock",
+             "⇱ Undock pops the bar out into its own little window that "
+             "floats on top; ⇲ Dock puts it back at the top of the console."),
+        ]
+
+    def _tb_toggle_dock(self):
+        if self._tb_docked:
+            self._tb_docked = False
+            for ch in list(self._tb_host.winfo_children()):
+                try:
+                    ch.destroy()
+                except Exception:
+                    pass
+            win = ctk.CTkToplevel(self.root)
+            win.title("Strata toolbar")
+            try:
+                win.attributes("-topmost", True)
+            except Exception:
+                pass
+            try:
+                scaling = ctk.ScalingTracker.get_window_scaling(self.root)
+            except Exception:
+                scaling = 1.0
+            win.geometry(f"{int(820 / scaling)}x{int(54 / scaling)}+180+120")
+            win.protocol("WM_DELETE_WINDOW", self._tb_toggle_dock)
+            self._tb_win = win
+            self._build_toolbar_widgets(win)
+        else:
+            self._tb_docked = True
+            if self._tb_win is not None:
+                try:
+                    self._tb_win.destroy()
+                except Exception:
+                    pass
+                self._tb_win = None
+            self._build_toolbar_widgets(self._tb_host)
+
+    def _tb_drag_start(self, event):
+        self._tb_drag = (event.x_root, event.y_root)
+
+    def _tb_drag_move(self, event):
+        if self._tb_win is None:
+            return
+        dx = event.x_root - self._tb_drag[0]
+        dy = event.y_root - self._tb_drag[1]
+        self._tb_drag = (event.x_root, event.y_root)
+        try:
+            x = self._tb_win.winfo_x() + dx
+            y = self._tb_win.winfo_y() + dy
+            self._tb_win.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
+
+    # ── 🎤 Voice: push-to-talk dictation into the message box ─────────────
+    def _toggle_voice(self):
+        if self._rec_stream is not None:
+            self._stop_voice()
+            return
+        try:
+            import sounddevice as sd
+        except Exception as e:
+            self._append_output(f"🎤 Voice needs the sounddevice package "
+                                f"(pip install sounddevice): {e}")
+            return
+        self._rec_frames = []
+        try:
+            self._rec_stream = sd.InputStream(
+                samplerate=16000, channels=1, dtype="float32",
+                callback=lambda indata, frames, t, status:
+                    self._rec_frames.append(indata.copy()))
+            self._rec_stream.start()
+        except Exception as e:
+            self._rec_stream = None
+            self._append_output(f"🎤 Could not open the microphone: {e}")
+            return
+        self.voice_btn.configure(text="■ Stop", fg_color="#dc2626",
+                                 hover_color="#b91c1c")
+        self.status_label.configure(
+            text="🎤 Listening — speak, then click ■ Stop…")
+
+    def _stop_voice(self):
+        stream = self._rec_stream
+        self._rec_stream = None
+        try:
+            stream.stop()
+            stream.close()
+        except Exception:
+            pass
+        self.voice_btn.configure(text="🎤 Voice", fg_color="#1f6aa5",
+                                 hover_color="#144870")
+        frames = self._rec_frames
+        self._rec_frames = []
+        if not frames:
+            self.status_label.configure(text=self.pipeline.get_status())
+            return
+        self.status_label.configure(text="🎤 Transcribing…")
+        threading.Thread(target=self._transcribe_async, args=(frames,),
+                         daemon=True).start()
+
+    def _transcribe_async(self, frames):
+        err, text = "", ""
+        try:
+            import numpy as np
+            from faster_whisper import WhisperModel
+            audio = np.concatenate(frames)[:, 0]
+            name = self._WHISPER_MODELS.get(self.quality_var.get(), "base.en")
+            cache = getattr(self, "_whisper_cache", None) or {}
+            model = cache.get(name)
+            if model is None:
+                model = WhisperModel(name, device="cpu", compute_type="int8")
+                cache[name] = model
+                self._whisper_cache = cache
+            segments, _info = model.transcribe(audio, beam_size=1)
+            text = " ".join(s.text.strip() for s in segments).strip()
+        except Exception as e:
+            err = f"{type(e).__name__}: {e}"
+
+        def deliver():
+            self.status_label.configure(text=self.pipeline.get_status())
+            if err:
+                self._append_output(f"🎤 Transcription failed: {err}")
+            elif text:
+                try:
+                    self.input_box.insert("end", text)
+                    self.input_box.focus_set()
+                except Exception:
+                    pass
+            else:
+                self._append_output("🎤 I didn't catch anything — try again "
+                                    "a little louder or closer to the mic.")
+        self.root.after(0, deliver)
+
+    # ── 🔊 Read: speak the last reply aloud (Windows voices, no setup) ─────
+    def _toggle_read(self):
+        proc = self._read_proc
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+            self._read_proc = None
+            self.read_btn.configure(text="🔊 Read")
+            return
+        text = (self._last_reply or "").strip()
+        if not text:
+            self._append_output("🔊 Nothing to read yet — send a message "
+                                "first.")
+            return
+        import os
+        import subprocess
+        import tempfile
+        fd, tmp = tempfile.mkstemp(suffix=".txt")
+        os.close(fd)
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+        rate = self._READ_SPEEDS.get(self.speed_var.get(), 0)
+        ps = ("Add-Type -AssemblyName System.Speech; "
+              f"$t = Get-Content -Raw -Encoding UTF8 -LiteralPath '{tmp}'; "
+              "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+              f"$s.Rate = {rate}; $s.Speak($t)")
+        self._read_proc = subprocess.Popen(
+            ["powershell", "-NoProfile", "-Command", ps],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        self.read_btn.configure(text="■ Stop")
+
+        def watch():
+            p = self._read_proc
+            if p is None or p.poll() is not None:
+                self._read_proc = None
+                try:
+                    self.read_btn.configure(text="🔊 Read")
+                except Exception:
+                    pass
+                return
+            self.root.after(300, watch)
+        self.root.after(300, watch)
+
+    # ── ❓ Tour: one control per step, flashed while explained ─────────────
+    def _show_tour(self):
+        items = [it for it in (getattr(self, "_tour_items", None) or [])]
+        if not items:
+            return
+        win = ctk.CTkToplevel(self.root)
+        win.title("❓ Toolbar tour")
+        try:
+            win.attributes("-topmost", True)
+        except Exception:
+            pass
+        try:
+            scaling = ctk.ScalingTracker.get_window_scaling(self.root)
+        except Exception:
+            scaling = 1.0
+        win.geometry(f"{int(470 / scaling)}x{int(250 / scaling)}+220+200")
+        step_l = ctk.CTkLabel(win, text="", anchor="w",
+                              font=ctk.CTkFont(size=12))
+        step_l.pack(anchor="w", padx=14, pady=(10, 0))
+        title_l = ctk.CTkLabel(win, text="", anchor="w",
+                               font=ctk.CTkFont(size=16, weight="bold"))
+        title_l.pack(anchor="w", padx=14, pady=(2, 4))
+        body_l = ctk.CTkLabel(win, text="", anchor="w", justify="left",
+                              wraplength=420, font=ctk.CTkFont(size=13))
+        body_l.pack(anchor="w", fill="x", padx=14)
+        brow = ctk.CTkFrame(win)
+        brow.pack(side="bottom", fill="x", padx=12, pady=10)
+        state = {"i": 0, "lit": None}
+
+        def unflash():
+            lit = state["lit"]
+            state["lit"] = None
+            if lit is None:
+                return
+            widget, orig = lit
+            try:
+                widget.configure(fg_color=orig)
+            except Exception:
+                pass
+
+        def flash(widget):
+            unflash()
+            try:
+                orig = widget.cget("fg_color")
+                widget.configure(fg_color="#d97706")
+                state["lit"] = (widget, orig)
+            except Exception:
+                pass
+
+        def close():
+            unflash()
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
+        def show(i):
+            i = max(0, min(i, len(items) - 1))
+            state["i"] = i
+            widget, title, text = items[i]
+            step_l.configure(text=f"Step {i + 1} of {len(items)}")
+            title_l.configure(text=title)
+            body_l.configure(text=text)
+            flash(widget)
+            back.configure(state=("normal" if i > 0 else "disabled"))
+            nxt.configure(text=("✓ Done" if i == len(items) - 1 else "Next ▶"))
+
+        def next_step():
+            if state["i"] >= len(items) - 1:
+                close()
+            else:
+                show(state["i"] + 1)
+
+        back = ctk.CTkButton(brow, text="◀ Back", width=90,
+                             command=lambda: show(state["i"] - 1))
+        back.pack(side="left", padx=(6, 0), pady=4)
+        nxt = ctk.CTkButton(brow, text="Next ▶", width=90, command=next_step)
+        nxt.pack(side="right", padx=(0, 6), pady=4)
+        win.protocol("WM_DELETE_WINDOW", close)
+        show(0)
+
+    # ═══ Context sources: web, OneDrive, uploaded documents ════════════════
+    def _gather_context(self, user_input, use_web, use_onedrive):
+        """Assemble grounding text for this turn (worker thread)."""
+        parts = []
+        att = self._attachment
+        if att:
+            from strata_tools.retrieval import retrieve_from_text
+            body = retrieve_from_text(user_input, att.get("text", ""))
+            if body:
+                parts.append(f"From the attached file '{att['name']}':\n"
+                             + body)
+        if use_onedrive:
+            parts.append(self._onedrive_context(user_input))
+        if use_web:
+            from strata_tools.web_search import web_search_context
+            parts.append(web_search_context(user_input))
+        return "\n\n".join(p for p in parts if p)
+
+    def _onedrive_toggled(self):
+        if self.onedrive_var.get():
+            self._ensure_onedrive_index()
+
+    def _ensure_onedrive_index(self):
+        if getattr(self, "_onedrive_index", None) is not None:
+            return
+        if getattr(self, "_onedrive_building", False):
+            return
+        self._onedrive_building = True
+        self._append_output("☁ Indexing your OneDrive files — the first "
+                            "time can take a few minutes; after that it's "
+                            "cached.")
+
+        def work():
+            from strata_tools import doc_index
+            try:
+                import os
+                cache = os.path.join(doc_index.cache_dir(),
+                                     "onedrive_index.json")
+                idx = doc_index.build_index_over(doc_index.onedrive_root(),
+                                                 cache)
+                self._onedrive_index = idx
+                note = f"☁ OneDrive ready — {len(idx)} files searchable."
+            except Exception as e:
+                self._onedrive_index = []
+                note = f"☁ OneDrive indexing failed: {e}"
+            self._onedrive_building = False
+            try:
+                self.root.after(0, lambda: self._append_output(note))
+            except Exception:
+                pass
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _onedrive_context(self, query):
+        index = getattr(self, "_onedrive_index", None)
+        if index is None:
+            try:
+                self.root.after(0, self._ensure_onedrive_index)
+            except Exception:
+                pass
+            return ("NOTE: the user's OneDrive files are still being "
+                    "indexed. Tell the user the file index is still "
+                    "building and to ask again in a few minutes.")
+        if not index:
+            return ""
+        from strata_tools.retrieval import retrieve_from_index
+        hits = retrieve_from_index(query, index)
+        return ("From the user's OneDrive files:\n" + hits) if hits else ""
+
+    def _upload_document(self):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="Upload a document for Strata to read",
+            filetypes=[("Readable files",
+                        "*.txt *.md *.docx *.pdf *.html *.htm "
+                        "*.xlsx *.xlsm *.csv"),
+                       ("All files", "*.*")])
+        if not path:
+            return
+        import os
+        from strata_tools.doc_index import extract_text
+        name = os.path.basename(path)
+        text = extract_text(path) or ""
+        if not text.strip():
+            self._append_output(f"📎 Couldn't read {name} — unsupported "
+                                "format or empty file.")
+            return
+        self._attachment = {"name": name, "text": text[:2_000_000]}
+        kb = max(1, len(text) // 1024)
+        self.attach_label.configure(
+            text=f"📎 {name} ({kb} KB) — attached; click here to remove")
+        self._append_output(f"📎 Attached {name}. Ask me about it — I'll "
+                            "read the relevant parts. It stays attached "
+                            "until you remove it.")
+
+    def _clear_attachment(self):
+        if self._attachment is None:
+            return
+        self._attachment = None
+        self.attach_label.configure(text="")
+        self._append_output("📎 Attachment removed.")
 
     def handle_command(self, command):
         cmd = command.lower()
