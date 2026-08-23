@@ -90,9 +90,10 @@ real Python interpreter, avoiding the Windows Store stub).
 py -3 -m unittest discover -s tests
 ```
 
-Covers the context tools: cached file indexing (including Excel
-extraction and repo-directory exclusion) and the pure retrieval
-ranking.
+Covers the context tools (cached file indexing including Excel
+extraction and repo-directory exclusion, and the pure retrieval ranking)
+and the voice path (capture-level verdicts and the Whisper RAM
+budget).
 
 ## Honest scope
 
