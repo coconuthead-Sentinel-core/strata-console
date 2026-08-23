@@ -37,6 +37,14 @@ persists across restarts.
 lesson being that llama3.2's 128K default tries to allocate ~15 GB and
 fails. `keep_alive` keeps the model warm between messages.
 
+The same discipline governs dictation. Each Whisper tier's peak working
+set was measured (Fast 320 MB, Accurate 671 MB, Best 1415 MB), only one
+model is ever resident, and `strata_tools/voice_budget.py` checks free
+RAM before loading — falling back a tier and saying why, rather than
+dying inside MKL. `tools/voice_check.py` runs capture, budget, and
+transcription as separate stages so a voice problem can be attributed to
+the right one.
+
 ## Features (v1.1)
 
 - **Chat console** with dyslexia-friendly reading fonts (OpenDyslexic

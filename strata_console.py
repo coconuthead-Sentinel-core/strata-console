@@ -463,6 +463,10 @@ class StrataPipeline:
 # GUI APPLICATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+class _VoiceStop(Exception):
+    """A voice-path stop that already carries its own owner-facing message."""
+
+
 class StrataConsole:
     def __init__(self):
         self.pipeline = StrataPipeline()
@@ -571,6 +575,9 @@ class StrataConsole:
         self._tb_drag = (0, 0)
         self._rec_stream = None
         self._rec_frames = []
+        self._whisper_model = None
+        self._whisper_tier = None
+        self._rec_device_name = "the microphone"
         self._read_proc = None
         self._last_reply = ""
         self._attachment = None
@@ -726,6 +733,10 @@ class StrataConsole:
     # ═══ Floating toolbar (ported from Sentinel Forge) ═════════════════════
     _WHISPER_MODELS = {"Fast": "base.en", "Accurate": "small.en",
                        "Best": "medium.en"}
+    # Below this RMS the capture carried no signal, so an empty
+    # transcript is the microphone's fault and must not be blamed on the
+    # speaker. A quiet room measures near 0.0003; speech measures 0.01+.
+    _SILENCE_FLOOR = 0.002
     _READ_SPEEDS = {"🐢 Slowest": -5, "🐢 Slower": -2, "Normal": 0,
                     "🐇 Faster": 2}
 
@@ -846,6 +857,11 @@ class StrataConsole:
             return
         self._rec_frames = []
         try:
+            info = sd.query_devices(kind="input")
+            self._rec_device_name = str(info["name"]).strip()
+        except Exception:
+            self._rec_device_name = "the microphone"
+        try:
             self._rec_stream = sd.InputStream(
                 samplerate=16000, channels=1, dtype="float32",
                 callback=lambda indata, frames, t, status:
@@ -880,26 +896,80 @@ class StrataConsole:
                          daemon=True).start()
 
     def _transcribe_async(self, frames):
-        err, text = "", ""
+        """Budget RAM, keep one model resident, then transcribe.
+
+        The old version cached every model it ever loaded, so cycling the
+        quality picker stacked all three tiers into whatever RAM Ollama
+        had left and the third load died inside MKL. It also gave no sign
+        that a 14-second model load was under way, which reads as a dead
+        microphone.
+        """
+        import gc
+
+        from strata_tools import voice_budget as vb
+
+        def status(msg):
+            self.root.after(0,
+                            lambda: self.status_label.configure(text=msg))
+
+        err, text, stop_note = "", "", ""
+        level = 0.0
         try:
             import numpy as np
-            from faster_whisper import WhisperModel
             audio = np.concatenate(frames)[:, 0]
-            name = self._WHISPER_MODELS.get(self.quality_var.get(), "base.en")
-            cache = getattr(self, "_whisper_cache", None) or {}
-            model = cache.get(name)
-            if model is None:
-                model = WhisperModel(name, device="cpu", compute_type="int8")
-                cache[name] = model
-                self._whisper_cache = cache
-            segments, _info = model.transcribe(audio, beam_size=1)
+            level = float(np.sqrt((audio ** 2).mean()))
+
+            wanted = self.quality_var.get()
+            if wanted not in vb.TIER_MODELS:
+                wanted = "Fast"
+            _total, free = vb.free_ram_mb()
+            tier, note = vb.plan_tier(free, wanted)
+            if tier is None:
+                stop_note = f"🎤 {note}"
+                raise _VoiceStop()
+            if tier != wanted:
+                self.root.after(
+                    0,
+                    lambda n=note: self._append_output(f"🎤 {n}"))
+
+            if self._whisper_tier != tier:
+                # One resident model at a time.
+                self._whisper_model = None
+                self._whisper_tier = None
+                gc.collect()
+                secs = vb.TIER_LOAD_SECONDS.get(tier, 5)
+                status(f"🎤 Loading the {tier} voice model "
+                       f"(about {secs}s the first time)…")
+                from faster_whisper import WhisperModel
+                try:
+                    self._whisper_model = WhisperModel(
+                        vb.TIER_MODELS[tier], device="cpu",
+                        compute_type="int8")
+                except (MemoryError, RuntimeError) as e:
+                    self._whisper_model = None
+                    gc.collect()
+                    stop_note = (
+                        f"🎤 The {tier} voice model would not fit in "
+                        f"RAM ({free} MB free). Ollama is holding the "
+                        f"language model — close it, or pick Fast. "
+                        f"[{type(e).__name__}: {e}]")
+                    raise _VoiceStop()
+                self._whisper_tier = tier
+
+            status("🎤 Transcribing…")
+            segments, _info = self._whisper_model.transcribe(audio,
+                                                             beam_size=1)
             text = " ".join(s.text.strip() for s in segments).strip()
+        except _VoiceStop:
+            pass
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
 
         def deliver():
             self.status_label.configure(text=self.pipeline.get_status())
-            if err:
+            if stop_note:
+                self._append_output(stop_note)
+            elif err:
                 self._append_output(f"🎤 Transcription failed: {err}")
             elif text:
                 try:
@@ -907,9 +977,16 @@ class StrataConsole:
                     self.input_box.focus_set()
                 except Exception:
                     pass
+            elif level <= self._SILENCE_FLOOR:
+                self._append_output(
+                    f"🎤 {self._rec_device_name} produced silence "
+                    f"(level {level:.5f}). That is the microphone or its "
+                    f"Windows input level — not you. Check Settings > "
+                    f"System > Sound > Input.")
             else:
-                self._append_output("🎤 I didn't catch anything — try again "
-                                    "a little louder or closer to the mic.")
+                self._append_output(
+                    "🎤 Sound came through but I didn't find any words "
+                    "— try again a little louder or closer to the mic.")
         self.root.after(0, deliver)
 
     # ── 🔊 Read: speak the last reply aloud (Windows voices, no setup) ─────

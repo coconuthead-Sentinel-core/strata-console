@@ -14,24 +14,21 @@ Usage:
 """
 
 import argparse
-import ctypes
+import os
 import sys
 import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                ".."))
+
+from strata_tools.voice_budget import (TIER_MODELS,  # noqa: E402
+                                       TIER_PEAK_MB, free_ram_mb, plan_tier,
+                                       tier_cost)
 
 # Capture thresholds. A quiet room on this laptop floors near 0.0003 RMS;
 # a spoken sentence measured 0.076 peak / 0.0076 mean at 16 kHz.
 SILENCE_FLOOR = 0.002
 SPEECH_FLOOR = 0.01
-
-# Resident weight cost per tier, measured from the cached model files.
-# base.en 141 MB, small.en 464 MB, medium.en 1460 MB on disk.
-TIER_MODELS = {"Fast": "base.en", "Accurate": "small.en",
-               "Best": "medium.en"}
-TIER_COST_MB = {"Fast": 141, "Accurate": 464, "Best": 1460}
-# Whisper needs room for activations and the decode beam on top of the
-# weights, and Ollama is usually holding llama3.2:3b at the same time.
-HEADROOM_MB = 400
-
 
 def verdict(peak_rms):
     """Classify a capture by its loudest RMS window. Pure."""
@@ -42,42 +39,6 @@ def verdict(peak_rms):
         return ("WEAK", "Signal is present but too quiet for Whisper. "
                         "Raise the input level in Windows sound settings.")
     return ("GOOD", "The device is carrying speech.")
-
-
-def tier_plan(free_mb, wanted):
-    """Pick the largest tier that fits in free_mb. Pure.
-
-    Returns (chosen_tier, note). chosen_tier is None when even the
-    smallest tier will not fit, which is a stop, not a fallback.
-    """
-    order = ["Best", "Accurate", "Fast"]
-    need = TIER_COST_MB[wanted] + HEADROOM_MB
-    if free_mb >= need:
-        return (wanted, "fits")
-    for tier in order[order.index(wanted) + 1:]:
-        if free_mb >= TIER_COST_MB[tier] + HEADROOM_MB:
-            return (tier, f"{wanted} needs ~{need} MB but only "
-                          f"{free_mb} MB is free — falling back to {tier}")
-    return (None, f"even Fast needs ~{TIER_COST_MB['Fast'] + HEADROOM_MB} "
-                  f"MB and only {free_mb} MB is free — close Ollama or "
-                  f"other apps first")
-
-
-def free_ram_mb():
-    class MemStatus(ctypes.Structure):
-        _fields_ = [("dwLength", ctypes.c_ulong),
-                    ("dwMemoryLoad", ctypes.c_ulong),
-                    ("ullTotalPhys", ctypes.c_ulonglong),
-                    ("ullAvailPhys", ctypes.c_ulonglong),
-                    ("ullTotalPageFile", ctypes.c_ulonglong),
-                    ("ullAvailPageFile", ctypes.c_ulonglong),
-                    ("ullTotalVirtual", ctypes.c_ulonglong),
-                    ("ullAvailVirtual", ctypes.c_ulonglong),
-                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
-    m = MemStatus()
-    m.dwLength = ctypes.sizeof(MemStatus)
-    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
-    return int(m.ullTotalPhys // 2 ** 20), int(m.ullAvailPhys // 2 ** 20)
 
 
 def list_devices(sd):
@@ -133,8 +94,9 @@ def stage_capture(sd, np, device, seconds):
 def stage_budget(wanted):
     total, free = free_ram_mb()
     print(f"\n[2/3] budget   {total} MB total, {free} MB free")
-    tier, note = tier_plan(free, wanted)
-    print(f"      requested {wanted} (~{TIER_COST_MB[wanted]} MB weights)")
+    tier, note = plan_tier(free, wanted)
+    print(f"      requested {wanted} (peak ~{TIER_PEAK_MB[wanted]} MB, "
+          f"budget {tier_cost(wanted)} MB)")
     print(f"      {note}")
     return tier
 
