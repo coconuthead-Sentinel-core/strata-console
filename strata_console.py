@@ -19,7 +19,7 @@ import tkinter.font as tkfont
 import customtkinter as ctk
 from datetime import datetime
 
-from strata_tools import session, window_fit
+from strata_tools import dictation, session, window_fit
 
 # Dyslexia-friendly reading fonts, best-first (ported from Sentinel Forge).
 # OpenDyslexic / Atkinson Hyperlegible are purpose-built for readability;
@@ -1002,6 +1002,12 @@ class StrataConsole:
             segments, _info = self._whisper_model.transcribe(audio,
                                                              beam_size=1)
             text = " ".join(s.text.strip() for s in segments).strip()
+            # Spoken punctuation into real characters, then collisions
+            # resolved -- Whisper auto-punctuates from pauses, so a
+            # dictated "period" arrives on top of a mark it already
+            # inserted. Pure and defensive: returns the raw transcript
+            # unchanged rather than raising and losing the words.
+            text = dictation.polish(text)
         except _VoiceStop:
             pass
         except Exception as e:
@@ -1322,6 +1328,19 @@ Available Commands:
 /mode red        → Switch to Red mode (archival)
 /clear           → Clear the window and the recalled context (Ctrl+L)
 /help            → Show this help
+
+Speaking punctuation while you dictate (🎤):
+  "period" "comma" "colon" "semicolon"      → . , : ;
+  "question mark" "exclamation point"       → ? !
+  "new line" "new paragraph"                → line breaks
+  "open paren" / "close paren", "open quote" / "close quote"
+  "dollar sign", "percent sign", "ellipsis"
+  "cap <word>"          → capitalise the next word
+  "caps on" ... "caps off"      → Title Case A Span
+  "all caps on" ... "all caps off"  → SHOUT
+
+Say them naturally — if the recogniser already heard the pause and
+punctuated it for you, the duplicate is cleaned up automatically.
 """
         self._append_output(help_text)
 
