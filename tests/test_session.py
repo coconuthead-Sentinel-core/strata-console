@@ -134,39 +134,53 @@ class DatabaseFloorTests(unittest.TestCase):
 
 class DatabasePathBindingTests(unittest.TestCase):
     """DB_PATH must be resolved when a connection is made, not when the
-    class is defined.
+    class is defined -- and it must live in exactly ONE module.
+
+    After the engine was split out of the shell, the shell deliberately
+    does not re-export DB_PATH. A re-export would be a second name that
+    tools could set while nothing read it: the same silent redirect
+    failure as before, wearing a different hat.
 
     The original `def __init__(self, path=DB_PATH)` captured the module
-    constant at import time, so a tool that set strata_console.DB_PATH to
+    constant at import time, so a tool that set strata_core.DB_PATH to
     a throwaway file was silently ignored and wrote to the owner's real
     database. The accessibility probes did exactly that on 2026-09-01 and
     pressed A+ against the live store, changing a saved font size.
     """
 
     def test_setting_db_path_after_import_is_honoured(self):
-        import strata_console
+        import strata_core
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
-        original = strata_console.DB_PATH
-        strata_console.DB_PATH = tmp.name
+        original = strata_core.DB_PATH
+        strata_core.DB_PATH = tmp.name
         try:
-            db = strata_console.StrataDB()
+            db = strata_core.StrataDB()
             self.assertEqual(db.path, tmp.name)
             db.conn.close()
         finally:
-            strata_console.DB_PATH = original
+            strata_core.DB_PATH = original
             os.unlink(tmp.name)
 
     def test_an_explicit_path_still_wins(self):
-        import strata_console
+        import strata_core
         tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         tmp.close()
         try:
-            db = strata_console.StrataDB(path=tmp.name)
+            db = strata_core.StrataDB(path=tmp.name)
             self.assertEqual(db.path, tmp.name)
             db.conn.close()
         finally:
             os.unlink(tmp.name)
+
+
+    def test_the_shell_does_not_shadow_the_setting(self):
+        # A re-exported DB_PATH in the shell would be a name tools could
+        # set while StrataDB reads the core's copy -- NM-005 again.
+        import strata_console
+        self.assertFalse(hasattr(strata_console, "DB_PATH"),
+                         "strata_console must not define DB_PATH; the "
+                         "engine owns it (see strata_core docstring)")
 
 
 if __name__ == "__main__":

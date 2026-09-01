@@ -10,6 +10,41 @@ root cause and the guard.
 
 ---
 
+## [1.4.0] — 2026-09-02
+
+A second shell, and the engine split out so both can share it.
+
+### Added
+- **`strata_core.py`** — the engine with no interface attached: the
+  SQLite store, the five pipeline stages, the model client. Imports no
+  Tk and nothing that assumes a window.
+- **`strata_web.py` + `web/`** — an HTML/CSS/JS front end in a native
+  WebView2 window (pywebview). Same database, same modes, same voice
+  path, same Ollama daemon. Launch with `launch_strata_web.vbs`.
+- Auto-read, spoken punctuation, the clear floor and the RAM budget all
+  work in both shells because they were already kernels.
+- `tests/test_web_shell.py` — 18 tests that parse the real stylesheet and
+  markup, so the two shells cannot drift into different palettes or
+  different accessibility stories.
+
+### Fixed
+- Auto-read for the desktop shell, and its template-mode path, which had
+  never set `_last_reply` and so replayed the previous answer.
+- Buttons: FB-007. Every control failed WCAG 1.4.11 against its frame.
+
+### Notes
+- **The Tk shell is unchanged and still the default.** This is a
+  comparison, not a replacement. Nothing was thrown away.
+- What HTML gave for free that Tk needed written by hand: keyboard
+  operation, a visible focus ring, whole-interface text resize, content
+  that scrolls instead of silently not being drawn, and a 68ch reading
+  column — the measurement the Tk shell reported at ~53 characters and
+  could not fix.
+- What it does **not** do: make the assistant smarter. Same model, same
+  prompts, same answers.
+
+---
+
 ## [1.3.0] — 2026-09-01
 
 The accessibility pass. Planned in `docs/ACCESSIBILITY_PLAN.md`, which

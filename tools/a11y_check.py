@@ -58,7 +58,8 @@ def main():
     tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     tmp.close()
     import strata_console
-    strata_console.DB_PATH = tmp.name
+    import strata_core
+    strata_core.DB_PATH = tmp.name
 
     app = strata_console.StrataConsole()
     root = app.root

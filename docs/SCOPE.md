@@ -74,8 +74,11 @@
 
 - **Horizon: 5-10 years** as a daily-use tool, single owner, maintained
   by owner + AI assistant.
-- **Stack chosen for that horizon**: CPython + Tkinter (via
-  CustomTkinter) + SQLite, with Ollama as a replaceable model backend.
+- **Stack chosen for that horizon**: CPython + SQLite, with Ollama as a
+  replaceable model backend, and **two interchangeable shells** over one
+  engine (`strata_core.py`): CustomTkinter, and HTML/CSS in a WebView2
+  window. The engine imports neither, which is what makes replacing a
+  front end cheap instead of existential.
 - **Documented runtime**: Python 3.13 on this laptop, targeting 3.11+.
   The interpreter rule is enforced by `strata_tools/interpreter.py` and
   `launch_strata.vbs`, because two Python installs on one machine is the

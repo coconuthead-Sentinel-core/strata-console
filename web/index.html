@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strata Console</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Skip link: the first thing a keyboard user meets. Free in HTML;
+     there is no Tk equivalent worth writing. -->
+<a class="skip" href="#composer">Skip to the message box</a>
+
+<header class="bar" role="banner">
+  <div class="brand">Strata<span>Console</span></div>
+
+  <div class="grp" role="group" aria-label="Reading">
+    <label class="lbl" for="font">Font</label>
+    <select id="font" class="ctl">
+      <option value="system">System</option>
+      <option value="atkinson">Atkinson Hyperlegible</option>
+      <option value="opendyslexic">OpenDyslexic</option>
+      <option value="verdana">Verdana</option>
+      <option value="serif">Serif</option>
+    </select>
+    <button id="smaller" class="ctl" type="button" aria-label="Smaller text">A&minus;</button>
+    <button id="bigger" class="ctl" type="button" aria-label="Larger text">A+</button>
+    <output id="size" class="size" aria-live="polite">17px</output>
+  </div>
+
+  <p id="status" class="status" role="status" aria-live="polite">Starting…</p>
+</header>
+
+<main id="log" class="log" tabindex="0" role="log" aria-live="polite"
+      aria-label="Conversation transcript"></main>
+
+<div class="tools" role="group" aria-label="Voice and session">
+  <button id="mic" class="ctl mic" type="button" aria-pressed="false">
+    <span aria-hidden="true">🎤</span> Speak
+  </button>
+  <select id="tier" class="ctl" aria-label="Dictation accuracy">
+    <option value="Fast">Fast</option>
+    <option value="Accurate">Accurate</option>
+    <option value="Best">Best</option>
+  </select>
+
+  <button id="read" class="ctl" type="button" aria-pressed="false">
+    <span aria-hidden="true">🔊</span> Read
+  </button>
+  <label class="check">
+    <input type="checkbox" id="autoread"> Auto
+  </label>
+
+  <span class="spacer"></span>
+
+  <button id="clear" class="ctl" type="button">
+    <span aria-hidden="true">🧹</span> Clear
+  </button>
+  <button id="help" class="ctl" type="button">Help</button>
+</div>
+
+<div class="modes" role="radiogroup" aria-label="Operating mode">
+  <button class="mode" data-zone="GREEN"  role="radio" aria-checked="true" type="button">
+    <span class="dot" aria-hidden="true"></span>Green<small>active</small>
+  </button>
+  <button class="mode" data-zone="YELLOW" role="radio" aria-checked="false" type="button">
+    <span class="dot" aria-hidden="true"></span>Yellow<small>analytical</small>
+  </button>
+  <button class="mode" data-zone="RED"    role="radio" aria-checked="false" type="button">
+    <span class="dot" aria-hidden="true"></span>Red<small>archival</small>
+  </button>
+</div>
+
+<form id="composer" class="composer" autocomplete="off">
+  <label class="sr" for="msg">Message</label>
+  <textarea id="msg" rows="1" placeholder="Type a message, or press Speak…"></textarea>
+  <button id="send" class="ctl send" type="submit">Send</button>
+</form>
+
+<script src="app.js"></script>
+</body>
+</html>
