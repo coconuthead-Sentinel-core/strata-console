@@ -171,7 +171,63 @@ colour is re-measured against every surface in the test suite.
 
 ---
 
+## FB-007 — Every button failed contrast against the surface it sat on
+
+**Status:** fixed, guarded · **Found:** 2026-09-02 · **Severity:** major
+
+**What the owner saw.** "The buttons are very small and hard to see."
+Reported from the field, after the accessibility pass.
+
+**What was actually wrong.** Two things, and the audit before this one
+missed both because it asked the wrong question.
+
+*Contrast.* WCAG 1.4.11 requires a control to reach 3:1 against its
+background. Measured against the frame:
+
+    CustomTkinter default blue  #1F6AA5  ->  2.47:1
+    GREEN inactive              #16301B  ->  1.01:1
+    YELLOW inactive             #33270A  ->  1.03:1
+    RED inactive                #3A1414  ->  1.15:1
+
+1.01:1 is not a dim control, it is an invisible one — and that one was
+introduced by the colour-coding work the day before. The earlier pass
+verified the **text on** the buttons and never the **button against what
+it sits on**. Same class of error as FB-005: checking that the window
+fits the screen and not that the content fits the window.
+
+A third, also pre-existing: the stock blue carries its own label at
+4.47:1, just under the 4.5:1 AA line.
+
+*Size.* Widget scaling had been dropped to 0.71 to fit every control on
+a 617px screen, which left buttons about 35px tall.
+
+**Guard.**
+- `strata_tools/theme.py` + 12 tests. An outline (`#C0CAD5`) chosen by
+  sweep clears 3:1 against the frame and every fill; the fill keeps
+  doing the text job and the outline does the shape job, so 1.4.11 is
+  not bought by losing 1.4.3. Button fill corrected to `#1A5A8C`
+  (5.68:1).
+- Tests assert the ORIGINAL fills fail unaided, so removing the outline
+  as a "simplification" breaks the build.
+- `tools/a11y_check.py` section 6 now measures this on every run.
+- Buttons raised to 49px drawn, and `/status` and `/lexicon` left the
+  bottom row — both duplicated things already on screen or typeable,
+  and the width they freed is why the rest can be read.
+
+---
+
 ## Near-misses — caught before shipping, recorded because the reasoning is the value
+
+### NM-008 — The layout planner and its own checker disagreed
+
+`plan_widget_scaling` divided by the bare widget-height sum while
+`chrome_height` had been corrected to include the packer's inter-row
+padding. The planner returned 0.91 and `describe()` then reported that
+very scaling would clip — the module contradicting itself in one call.
+`tools/fit_sweep.py` (new) settles it empirically: it builds the real
+console at a range of scalings and counts what Tk mapped. 0.71 is the
+ceiling; above it three controls vanish. The sweep is now the authority
+and the constant is derived from it.
 
 ### NM-005 — A default argument sent the probes at the live database
 

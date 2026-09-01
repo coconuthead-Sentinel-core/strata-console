@@ -20,7 +20,7 @@ import customtkinter as ctk
 from datetime import datetime
 
 from strata_tools import (dictation, keyboard, layout, modes,
-                           selection, session, speech, window_fit)
+                           selection, session, speech, theme, window_fit)
 
 # Reading fonts offered to the owner, best-first (ported from Sentinel
 # Forge). CORRECTED 2026-09-01 -- the previous comment here claimed these
@@ -586,6 +586,12 @@ class StrataConsole:
         # ring, so before this call the console had exactly two
         # keyboard-reachable widgets out of twenty-two. Measured, not
         # assumed -- tools/a11y_check.py reports the real ring.
+        # Make the controls visible as SHAPES before making them
+        # reachable. Measured: every button in the app failed WCAG
+        # 1.4.11 against the frame it sits on -- the stock blue at
+        # 2.47:1 and the inactive mode fills as low as 1.01:1, which is
+        # invisible rather than merely dim.
+        self._style_controls()
         self._keyboard_controls = keyboard.enable_tree(self.root)
         # The transcript is state="disabled" so it cannot be typed into,
         # and Tk drops disabled widgets out of the focus ring entirely.
@@ -757,9 +763,14 @@ class StrataConsole:
         button_frame = ctk.CTkFrame(self.root)
         button_frame.pack(side="bottom", fill="x", padx=16, pady=(4, 0))
 
+        # /status and /lexicon were dropped from this row on 2026-09-02.
+        # The status line is already on screen at all times, so a button
+        # to print it again was duplicating a live readout; /lexicon is a
+        # rare reference lookup. Both remain as typed commands and in
+        # /help. That takes the row from seven controls to five -- the
+        # shop design law's ceiling -- and the width each button gets
+        # back is why they can now be read.
         buttons = [
-            ("/status", self.show_status),
-            ("/lexicon", self.show_lexicon),
             ("/help", self.show_help),
             ("🧹 Clear", self.clear_window),
         ]
@@ -865,12 +876,20 @@ class StrataConsole:
             self._append_output(output.get('closing', ''))
         else:
             # Template fallback (model not ready) — the structured four-part reply.
+            # _last_reply was never set on this path, so 🔊 Read replayed
+            # the PREVIOUS answer instead of this one.
+            self._last_reply = " ".join(
+                str(output.get(k, "")) for k in
+                ("summary", "description", "comments") if output.get(k))
             self._append_output(f"Strata: {output.get('summary', '')}")
             self._append_output(output.get('description', ''))
             self._append_output(output.get('comments', ''))
             self._append_output(output.get('closing', ''))
         self._set_busy(False)
         self.status_label.configure(text=self.pipeline.get_status())
+        # Read the answer aloud without being asked, when Auto is on.
+        if self._autoread_on() and (self._last_reply or "").strip():
+            self._start_reading(self._last_reply)
 
     def _set_busy(self, busy):
         """Disable the entry + Send button while a response is generating."""
@@ -912,6 +931,15 @@ class StrataConsole:
         self.read_btn = ctk.CTkButton(parent, text="🔊 Read", width=84,
                                       command=self._toggle_read)
         self.read_btn.pack(side="left", padx=(0, 6), pady=6)
+        # Read every answer aloud without being asked. Persisted, because
+        # a preference that resets each launch is a preference the owner
+        # has to keep re-stating.
+        self.autoread_var = ctk.BooleanVar(
+            value=self.pipeline.db.get_state("autoread", "0") == "1")
+        self.autoread_box = ctk.CTkCheckBox(
+            parent, text="Auto", variable=self.autoread_var, width=60,
+            command=self._autoread_toggled)
+        self.autoread_box.pack(side="left", padx=(0, 8), pady=6)
         ctk.CTkLabel(parent, text="Speed:").pack(side="left", padx=(4, 2))
         s_menu = ctk.CTkOptionMenu(parent, width=110,
                                    values=list(self._READ_SPEEDS),
@@ -1153,6 +1181,52 @@ class StrataConsole:
         self.root.after(0, deliver)
 
     # ── 🔊 Read: speak the last reply aloud (Windows voices, no setup) ─────
+    def _style_controls(self):
+        """Outline every control, and give the buttons a usable height.
+
+        Mode buttons are skipped: they carry their own fill and their own
+        selected/unselected outline from strata_tools.modes, and
+        overwriting it here would erase which mode is live.
+        """
+        mode_buttons = set(getattr(self, "mode_buttons", {}).values())
+        for widget in self._walk(self.root):
+            kind = type(widget).__name__
+            if widget in mode_buttons:
+                # Colours are theirs; the height is everyone's.
+                try:
+                    widget.configure(height=theme.BUTTON_MIN_HEIGHT)
+                except Exception:
+                    pass
+                continue
+            try:
+                if kind == "CTkButton":
+                    widget.configure(fg_color=theme.BUTTON_FILL,
+                                     hover_color=theme.BUTTON_HOVER,
+                                     height=theme.BUTTON_MIN_HEIGHT,
+                                     **theme.outline_kwargs())
+                elif kind in ("CTkOptionMenu", "CTkComboBox"):
+                    widget.configure(fg_color=theme.BUTTON_FILL,
+                                     button_color=theme.BUTTON_HOVER,
+                                     height=theme.BUTTON_MIN_HEIGHT)
+            except Exception:
+                pass
+
+    def _autoread_on(self):
+        """Is auto-read enabled? Safe before the toolbar exists."""
+        try:
+            return bool(self.autoread_var.get())
+        except Exception:
+            return False
+
+    def _autoread_toggled(self):
+        on = self._autoread_on()
+        self.pipeline.db.set_state("autoread", "1" if on else "0")
+        # Visible confirmation, per the design law -- a toggle that
+        # changes nothing on screen reads as a toggle that did nothing.
+        self._append_output("🔊 Auto-read ON — answers will be spoken as "
+                            "they arrive." if on else
+                            "🔊 Auto-read off — use the 🔊 Read button.")
+
     def _toggle_read(self):
         proc = self._read_proc
         if proc is not None and proc.poll() is None:
@@ -1168,16 +1242,27 @@ class StrataConsole:
             self._append_output("🔊 Nothing to read yet — send a message "
                                 "first.")
             return
+        self._start_reading(text, announce=True)
+
+    def _start_reading(self, raw, announce=False):
+        """Speak a reply. The one path the button and auto-read share.
+
+        Two callers meant two chances to drift, so there is one routine.
+        ``announce`` is False for auto-read: an automatic action that
+        cannot speak should stay quiet rather than push an error into
+        the transcript after every single reply.
+        """
         # The model answers in markdown. Handed to SAPI as-is it says
         # "asterisk asterisk important asterisk asterisk" and recites
         # code blocks character by character, so strip the markup and
         # spell out numbers, money and abbreviations first. Applied only
         # to the string given to the engine — the on-screen text is
         # untouched.
-        text = speech.speakable(text)
+        text = speech.speakable(raw or "")
         if not text.strip():
-            self._append_output("🔊 That reply had nothing sayable in "
-                                "it — no words outside the markup.")
+            if announce:
+                self._append_output("🔊 That reply had nothing sayable in "
+                                    "it — no words outside the markup.")
             return
         import os
         import subprocess
@@ -1483,6 +1568,10 @@ Available Commands:
 /clear           → Clear the window and the recalled context (Ctrl+L)
                    (Ctrl+A selects all of whatever box has focus)
 /help            → Show this help
+
+🔊 Read speaks the last answer. Tick "Auto" beside it and every answer
+is read aloud as it arrives — the 🐢/🐇 picker sets the speed, and the
+button becomes ■ Stop while it is talking.
 
 Speaking punctuation while you dictate (🎤):
   "period" "comma" "colon" "semicolon"      → . , : ;

@@ -168,6 +168,40 @@ def main():
     else:
         print("    PASS  modes are visually distinguished")
 
+    # --- controls visible as shapes ---------------------------------------
+    print("")
+    print("[6] NON-TEXT CONTRAST  (WCAG 1.4.11 AA -- a control must reach")
+    print("     3:1 against the background it sits on)")
+    from strata_tools import theme
+    from strata_tools.wcag import contrast_ratio
+    worst = []
+    for widget in controls:
+        if type(widget).__name__ not in ("CTkButton", "CTkOptionMenu"):
+            continue
+        try:
+            fill = widget.cget("fg_color")
+            border = widget.cget("border_color")
+            width = widget.cget("border_width")
+        except Exception:
+            continue
+        fill = fill[1] if isinstance(fill, (list, tuple)) else fill
+        border = border[1] if isinstance(border, (list, tuple)) else border
+        try:
+            fill_ratio = contrast_ratio(str(fill), theme.FRAME)
+            edge_ratio = (contrast_ratio(str(border), theme.FRAME)
+                          if width and int(width) > 0 else 0.0)
+        except Exception:
+            continue
+        best = max(fill_ratio, edge_ratio)
+        if best < theme.NON_TEXT_MIN:
+            worst.append((label_of(widget), fill_ratio, edge_ratio))
+    if worst:
+        for name, f, e in worst:
+            print(f"    FAIL  {name:<24} fill {f:.2f}:1  border {e:.2f}:1")
+    else:
+        print(f"    PASS  every control reaches {theme.NON_TEXT_MIN}:1 by "
+              f"its fill or its outline")
+
     root.destroy()
     try:
         app.pipeline.db.conn.close()

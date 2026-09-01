@@ -37,8 +37,11 @@ TEXT = "#DCE4EE"
 ACTIVE_MARK = "● "          # a filled bullet
 INACTIVE_MARK = ""
 
-ACTIVE_BORDER = 2
-INACTIVE_BORDER = 0
+# Both states carry a border now. Inactive used to be 0, which left the
+# fill alone to define the shape -- and the inactive fills measure as low
+# as 1.01:1 against the frame, i.e. invisible. See strata_tools/theme.py.
+ACTIVE_BORDER = 3
+INACTIVE_BORDER = 1
 
 # fg when active / fg when inactive / hover. Active is the brighter of
 # each pair, so "live" reads as lit rather than merely different.
@@ -109,12 +112,13 @@ def appearance(mode, active):
     if key is None:
         return {}
     spec = MODES[key]
+    from strata_tools import theme
     return {
         "text": label_for(key, active),
         "fg_color": spec["active"] if active else spec["inactive"],
         "hover_color": spec["hover"],
         "border_width": ACTIVE_BORDER if active else INACTIVE_BORDER,
-        "border_color": TEXT,
+        "border_color": TEXT if active else theme.OUTLINE,
     }
 
 

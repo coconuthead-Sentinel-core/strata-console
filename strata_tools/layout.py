@@ -36,12 +36,41 @@ output has its priorities inverted.
 """
 
 # Chrome height (everything except the transcript) at widget scaling
-# 1.0, measured after the title row was removed and status merged into
-# the top row. Re-derive with: py -3 tools/_one_scaling.py 1.0
-CHROME_AT_1 = 431
+# 1.0. Re-derive after ANY layout change with:
+#     py -3 tools/_one_scaling.py 1.0
+# History, because this number drifts with the layout and a stale one
+# silently mis-sizes the whole console:
+#   529  original seven-row layout
+#   431  after the title banner was dropped and status merged
+#   392  after /status and /lexicon left the bottom row, with the
+#        remaining buttons raised to a usable height (2026-09-02)
+CHROME_AT_1 = 392
 
-# The transcript never gets less than this, in real pixels.
-MIN_TRANSCRIPT = 180
+# What the estimate above MISSES. CHROME_AT_1 is a sum of requested
+# widget heights; the packer also inserts pady between every stacked row,
+# and that is not in any widget's reqheight. Left uncounted, the kernel
+# chose scaling 0.91 on this display -- which the empirical sweep shows
+# hides three controls and squeezes the transcript to one pixel.
+#
+# Derived from tools/fit_sweep.py, which builds the real console at a
+# range of scalings and counts what Tk actually mapped:
+#
+#     0.95, 0.90 -> 3 hidden      0.85, 0.80, 0.75 -> 1 hidden
+#     0.71       -> 0 hidden, transcript 94px, buttons 50px tall
+#
+# 0.71 is therefore the ceiling, and this allowance is what makes the
+# arithmetic agree with the measurement. The sweep is the authority; if
+# the layout changes, re-run it rather than adjusting this by feel.
+ROW_PADDING_AT_1 = 111
+
+# The transcript never gets less than this, in real pixels. Lowered from
+# 180 on 2026-09-02: the owner reported the controls as too small to use,
+# and every pixel reserved here is a pixel the chrome cannot have. With
+# auto-read now speaking answers aloud, the transcript is less often the
+# thing being stared at, so the trade lands the right way round. Verified
+# by measurement, not assumed -- tools/layout_probe.py must still report
+# zero hidden controls at every text size.
+MIN_TRANSCRIPT = 130
 
 # CustomTkinter renders below about 0.7 with visible artefacts, and
 # above 1.75 there is no display here that needs it.
@@ -50,8 +79,13 @@ MAX_SCALING = 1.75
 
 
 def chrome_height(scaling, chrome_at_1=CHROME_AT_1):
-    """Pixels the non-transcript rows need at this scaling. Pure."""
-    return chrome_at_1 * float(scaling)
+    """Pixels the non-transcript rows need at this scaling. Pure.
+
+    Includes the inter-row padding the packer adds, which is not part of
+    any widget's requested height and whose omission is what let an
+    earlier version pick a scaling that hid three controls.
+    """
+    return (chrome_at_1 + ROW_PADDING_AT_1) * float(scaling)
 
 
 def content_fits(window_h, scaling, chrome_at_1=CHROME_AT_1,
@@ -77,8 +111,19 @@ def plan_widget_scaling(window_h, chrome_at_1=CHROME_AT_1,
     available = float(window_h) - min_transcript
     if available <= 0:
         return MIN_SCALING
-    ideal = available / float(chrome_at_1)
-    return max(MIN_SCALING, min(MAX_SCALING, round(ideal, 2)))
+    # Divide by the SAME total chrome_height() uses -- padding included.
+    # Dividing by the bare widget sum here while chrome_height() added
+    # padding made the planner and the checker disagree: plan_widget_scaling
+    # returned 0.91 and describe() then said that very scaling would clip.
+    ideal = available / (float(chrome_at_1) + ROW_PADDING_AT_1)
+    chosen = max(MIN_SCALING, min(MAX_SCALING, round(ideal, 2)))
+    # Rounding up by a hundredth can cross the line the sweep found, so
+    # step down until the kernel's own fit check agrees.
+    while (chosen > MIN_SCALING
+           and not content_fits(window_h, chosen, chrome_at_1,
+                                min_transcript)):
+        chosen = round(chosen - 0.01, 2)
+    return chosen
 
 
 def transcript_height(window_h, scaling, chrome_at_1=CHROME_AT_1):
