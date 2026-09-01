@@ -67,6 +67,15 @@ answers "Requirement already satisfied", and changes nothing.
   Whisper dictation (faster-whisper, Fast/Accurate/Best), 🔊 read the
   last reply aloud with a 🐢/🐇 speed picker, ❓ step-by-step guided
   tour.
+- **Spoken punctuation** while dictating — "period", "question mark",
+  "new line", "cap", "caps on/off", "all caps on/off". Whisper's own
+  auto-punctuation is de-duplicated against what you say, so a spoken
+  mark landing on one it already inserted collapses to a single mark.
+- **Read-aloud speaks English, not markup** — markdown is stripped and
+  numbers, money, percents, ordinals, years and abbreviations are
+  expanded before the text reaches the voice. Inline `code` is held
+  atomic so a file path is not read as arithmetic.
+- **Ctrl+A** selects all of whichever box has focus.
 - **Clear** (button, `/clear`, or Ctrl+L) empties the transcript *and*
   the context the model recalls. Both halves move together: clearing
   only the view would leave the assistant quoting the conversation you
@@ -120,7 +129,20 @@ py -3 -m unittest discover -s tests
 Covers the context tools (cached file indexing including Excel
 extraction and repo-directory exclusion, and the pure retrieval ranking)
 and the voice path (capture-level verdicts, the Whisper RAM budget, and
-the interpreter rule that decides whether dictation can run at all).
+the interpreter rule that decides whether dictation can run at all),
+spoken punctuation, the read-aloud front end, window sizing, WCAG
+contrast, and the design-law linter — which is gated over the whole
+repository from inside the suite, so a violation fails the build.
+
+CI runs the same suite on Windows against Python 3.11 and 3.13 on every
+push and pull request, plus a degraded-mode import check that proves the
+console still starts with nothing optional installed.
+
+Engineering records live in `docs/`: [SCOPE.md](docs/SCOPE.md) (baselined),
+[BUILD_PLAN.md](docs/BUILD_PLAN.md), [FORMER_BUGS.md](docs/FORMER_BUGS.md)
+— every defect with the guard that now prevents it — and
+[TRANSFER_CATALOG.md](docs/TRANSFER_CATALOG.md), which records what was
+taken from Sentinel Forge and, just as deliberately, what was not.
 
 ## Honest scope
 

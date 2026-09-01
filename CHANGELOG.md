@@ -40,6 +40,10 @@ material is catalogued in `docs/TRANSFER_CATALOG.md`.
   two-interpreters warning at the top.
 - **Documentation set** — `docs/SCOPE.md`, `docs/BUILD_PLAN.md`,
   `docs/TRANSFER_CATALOG.md`, `docs/FORMER_BUGS.md`, this changelog.
+- **Ctrl+A** selects all of whichever box has focus
+  (`strata_tools/selection.py`).
+- **WCAG contrast audit** of the console's real palette, read from the
+  CustomTkinter theme (`strata_tools/wcag.py`).
 
 ### Changed
 - Window sizing moved from inline arithmetic to a tested kernel
@@ -51,6 +55,13 @@ material is catalogued in `docs/TRANSFER_CATALOG.md`.
 ### Fixed
 - **Dictation returned unpunctuated text** — FB-003.
 - **Read-aloud spoke the markdown** — FB-004.
+
+### Known and accepted
+- Two colour pairs miss WCAG AA: the default button at 4.47:1 (against
+  4.5 — CustomTkinter's stock theme) and the recording-state red at
+  3.77:1. Reported rather than recoloured, with reasons, in
+  `wcag.ACCEPTED_SHORTFALLS`. The recording red also changes its label
+  to "Stop", so state is not carried by colour alone.
 
 ### Decided against
 - **`platform_dpi` (DPI awareness)** — declined on measurement, not

@@ -146,3 +146,6 @@ method is not "move everything" — it is "nothing in the wrong place."
 | 10–11 | **A6** records | `FORMER_BUGS.md` (4 defects, 4 near-misses, 6 standing laws) + `CHANGELOG.md` reconstructed from history. |
 | 12 | **A7** baseline | `SCOPE.md` baselined; three acceptance criteria added; the DPI risk row closed. |
 | **12** | **GATE** | **All seven gaps closed — 100% reached, one pomodoro under plan.** |
+| 13 | **B1** contrast audit | `wcag.py` + 15 tests. Two real shortfalls found and **reported, not recoloured** — recolouring would break the "as designed" rule the tool exists to protect. |
+| 14 | **B2** select-all | `selection.py` + 7 tests. Duck typing re-verified against the real CTk widgets before wiring. Ctrl+A bound. |
+| — | **B3–B5 held** | Voice picker, streaming speech and NVDA announcements each *add* to the interface rather than complete it. Past the gate, so they are owner decisions, not build work. |
