@@ -1,13 +1,13 @@
 # Scope Statement — Strata Console
 
 > Written per the `scope-first` skill: reconstructed from the shipped
-> truth of this repository and awaiting the owner's sign-off. From
-> baseline, work is checked against this document; changes to it are
-> explicit logged decisions, never drift. Standards frame:
+> truth of this repository. From baseline, work is checked against this
+> document; changes to it are explicit logged decisions, never drift. Standards frame:
 > ISO/IEC/IEEE 12207 · SWEBOK · IEEE 29148.
 >
-> _Drafted 2026-08-31 · Owner: Shannon Brian Kelley (architect / QA) ·
-> Maintainers: owner + AI coding assistant · **Not yet baselined.**_
+> _Drafted 2026-08-31 · **Baselined 2026-09-01** on the owner's
+> instruction to complete the build · Owner: Shannon Brian Kelley
+> (architect / QA) · Maintainers: owner + AI coding assistant._
 
 ## 1. In scope
 
@@ -60,7 +60,12 @@
 - **Failure messages must be actionable and true.** Any "missing
   dependency" message names `sys.executable` and a command pinned to it.
 - The full suite is green at every merge to `main`, proven by CI on
-  Python 3.11 and 3.13. _(Not yet in place — Phase 1.)_
+  Python 3.11 and 3.13. _(In place: `.github/workflows/ci.yml`.)_
+- **No shipped source violates a design law.** The linter runs inside
+  the suite, so a violation fails the build rather than shipping
+  (`strata_tools/design_laws.py`).
+- **Every defect is recorded with its guard** in `docs/FORMER_BUGS.md`.
+  A fix without a guard is a defect waiting for its second appearance.
 - The owner can perform each shipped workflow on his real ~1097x617
   effective display.
 - The worktree, the live install, and GitHub agree at the same commit.
@@ -85,11 +90,13 @@
 | --- | --- |
 | `strata_console.py` is a single ~1,300-line file mixing pipeline, DB, and Tk shell. | Small today. The seam is the `StrataDB` / pipeline-node boundary — each node lifts into `strata_tools/` on the existing pattern. Named here while it is cheap; this is the trap that produced Sentinel's 28k-line shell. |
 | Two Python interpreters on the laptop, only one carrying the voice packages. | Fixed and tested (`interpreter.py`), but the machine can drift again. `cscript //nologo launch_strata.vbs /which` is the check. |
-| CustomTkinter multiplies window geometry by display scaling (~1.75x here). | **Open defect.** Fix is `platform_dpi.py` from Sentinel Forge plus linter rules — Phase 3 of the transfer catalog. |
+| CustomTkinter multiplies window geometry by display scaling (~1.75x here). | **Closed.** The compensation is now a tested kernel (`window_fit.py`), the invariant is swept in tests, and design-law rule B fails the build on a hardcoded size. DPI awareness was measured and declined — it would halve the window (NM-002). |
 | Whisper and Ollama compete for RAM on an 8 GB laptop. | Handled: `voice_budget.py` plans a tier against free RAM and stops rather than dying inside MKL. |
 
 ## 6. Change log for this scope
 
 | Date | Change | Decision |
 | --- | --- | --- |
-| 2026-08-31 | Document drafted from shipped truth; personal-development features declared permanently out of scope. | Awaiting owner sign-off to baseline. |
+| 2026-08-31 | Document drafted from shipped truth; personal-development features declared permanently out of scope. | Superseded by the row below. |
+| 2026-09-01 | Baselined. Seven completion gaps closed (see `docs/BUILD_PLAN.md`). Three acceptance criteria added: design-law gate, defect register, CI. | Owner instruction: complete the build. |
+| 2026-09-01 | DPI awareness declined on measurement; seven donor modules declined as design-changing. | Recorded in `docs/TRANSFER_CATALOG.md` and `docs/FORMER_BUGS.md` NM-002 — decisions, not oversights. |

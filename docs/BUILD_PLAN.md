@@ -138,3 +138,11 @@ method is not "move everything" — it is "nothing in the wrong place."
 | Pom | Task | Result |
 | --- | --- | --- |
 | — | Plan written | This document |
+| 1–2 | **A1** window sizing | `window_fit.py` + 18 tests. DPI awareness **declined on measurement** — it drops the window from 91% to 52% of screen width. Geometry verified byte-identical (999×486+30+20). |
+| 3–4 | **A2** dictation punctuation | `dictation.py` + 24 tests. Spoken marks, capitalisation modes, Whisper collision resolution. Listed in `/help`. |
+| 5–6 | **A3** read-aloud | `speech.py` + 26 tests. Markdown stripped, numbers and money expanded, inline code held atomic. |
+| 7 | **A4** CI | `ci.yml` on 3.11 + 3.13, plus a degraded-mode import check. `requirements.txt` added. Every step run locally first. |
+| 8–9 | **A5** design-law linter | `design_laws.py` + 19 tests, gated over the repo. Rule C is new, earned by FB-002. Two false positives fixed at source, not suppressed. |
+| 10–11 | **A6** records | `FORMER_BUGS.md` (4 defects, 4 near-misses, 6 standing laws) + `CHANGELOG.md` reconstructed from history. |
+| 12 | **A7** baseline | `SCOPE.md` baselined; three acceptance criteria added; the DPI risk row closed. |
+| **12** | **GATE** | **All seven gaps closed — 100% reached, one pomodoro under plan.** |
