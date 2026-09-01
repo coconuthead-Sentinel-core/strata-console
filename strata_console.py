@@ -14,6 +14,7 @@ engineering project — not novel research.
 
 
 import threading
+import time
 import tkinter.font as tkfont
 import customtkinter as ctk
 
@@ -110,6 +111,14 @@ class StrataConsole:
         keyboard.enable_reading_surface(self.output_box,
                                         keyboard._ring_on,
                                         keyboard._ring_off)
+
+        # Give the voice model's memory back when it is not being used.
+        # Measured: base.en plus its runtime holds ~174 MB and releasing
+        # it returns ~221 MB. On an 8 GB laptop sitting at 400-600 MB
+        # free -- which is where this one lives -- that is the difference
+        # between dictation working and refusing.
+        self._whisper_used_at = None
+        self._watch_voice_memory()
 
     # ── Accessibility (dyslexia fonts + size; persisted across restarts) ──────
     @staticmethod
@@ -649,6 +658,7 @@ class StrataConsole:
                         f"[{type(e).__name__}: {e}]")
                     raise _VoiceStop()
                 self._whisper_tier = tier
+                self._whisper_used_at = time.monotonic()
 
             status("🎤 Transcribing…")
             segments, _info = self._whisper_model.transcribe(audio,
@@ -719,6 +729,31 @@ class StrataConsole:
                                      height=theme.BUTTON_MIN_HEIGHT)
             except Exception:
                 pass
+
+    def _watch_voice_memory(self):
+        """Drop an idle voice model, then check again in a minute."""
+        try:
+            from strata_tools import voice_budget as vb
+            if self._whisper_model is not None and self._whisper_used_at:
+                idle = time.monotonic() - self._whisper_used_at
+                _total, free = vb.free_ram_mb()
+                if vb.should_release(idle, free):
+                    self._whisper_model = None
+                    self._whisper_tier = None
+                    self._whisper_used_at = None
+                    import gc
+                    gc.collect()
+                    # Say so. A background action that silently changes
+                    # how long the next dictation takes should not be a
+                    # surprise.
+                    self._append_output("🎤 "
+                                        + vb.release_reason(idle, free))
+        except Exception:
+            pass
+        try:
+            self.root.after(60000, self._watch_voice_memory)
+        except Exception:
+            pass
 
     def _autoread_on(self):
         """Is auto-read enabled? Safe before the toolbar exists."""

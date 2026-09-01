@@ -70,7 +70,18 @@ class TierBudgetTests(unittest.TestCase):
     def test_no_tier_fits_is_a_stop_not_a_silent_downgrade(self):
         tier, note = plan_tier(200, "Best")
         self.assertIsNone(tier)
-        self.assertIn("close Ollama", note)
+        # UPDATED 2026-09-02. This used to assert the note contained
+        # "close Ollama" -- which pinned in place advice that could not
+        # work. Measured on the owner's machine while he was hitting this
+        # very stop: Ollama was holding 13 MB because its model was not
+        # loaded, so closing it would have recovered nothing against a
+        # 270 MB shortfall.
+        #
+        # A test that asserts exact wording locks the wording in, defect
+        # and all. So this now checks what the message must ACHIEVE: name
+        # the size of the gap, and offer something that would close it.
+        self.assertIn("270 MB short", note)
+        self.assertRegex(note, r"window|releases")
 
     def test_exact_fit_is_accepted(self):
         self.assertEqual(plan_tier(tier_cost("Accurate"), "Accurate")[0],

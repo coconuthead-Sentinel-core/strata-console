@@ -216,6 +216,60 @@ a 617px screen, which left buttons about 35px tall.
 
 ---
 
+## FB-008 — The console held a voice model nobody was using
+
+**Status:** fixed, guarded · **Found:** 2026-09-02 (owner, field test) ·
+**Severity:** major
+
+**What the owner saw.** Dictation refused: *"even Fast needs about 470 MB
+and only 406 MB is free."* He closed other applications and it worked
+again.
+
+**Two separate things were true.**
+
+*The guard was correct.* It declined instead of dying inside MKL, which
+is exactly what it was built for. That half is not a defect and was not
+changed.
+
+*The console was part of the problem.* After the first dictation the
+Whisper model was kept resident forever. Measured on the owner's 8 GB
+laptop that day:
+
+    loading base.en           -134 MB free
+    model + runtime resident   ~174 MB
+    releasing it              +180 to +221 MB free
+
+On a machine that lives at 400–600 MB free, that is the entire margin.
+Keeping one model resident was the right answer when the problem was
+three of them stacking up (the earlier RAM fix); it is the wrong answer
+once the machine itself is the constraint.
+
+*And the advice could not work.* The message said "close Ollama or other
+apps". Ollama was holding **13 MB** — its model was not loaded. Sending
+someone to close a 13 MB process to recover 64 MB is advice that cannot
+work, which is the same failure that kept FB-002 alive for weeks.
+
+**Guard.**
+- `voice_budget.should_release()` — release after 5 minutes idle, or
+  immediately below 700 MB free. Pure, and `LOW_RAM_MB` is asserted to
+  sit *above* `tier_cost("Fast")`, so releasing fires before dictation
+  starts failing rather than after.
+- Both shells watch once a minute and say so when they release; a
+  background action that changes how long the next dictation takes
+  should not be a surprise.
+- `shortfall_advice()` names the actual gap in MB and the levers that
+  return the most.
+- `tests/test_voice_memory.py`, 16 tests, including the owner's exact
+  reported condition (406 MB free).
+
+**One test had to be changed, and that is worth recording.**
+`test_no_tier_fits_is_a_stop_not_a_silent_downgrade` asserted the
+message contained the literal string "close Ollama" — so the suite was
+holding the bad advice in place. A test that pins exact wording pins the
+wording's defects too. It now asserts what the message must *achieve*.
+
+---
+
 ## Near-misses — caught before shipping, recorded because the reasoning is the value
 
 ### NM-008 — The layout planner and its own checker disagreed

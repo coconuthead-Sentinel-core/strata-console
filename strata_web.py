@@ -32,6 +32,7 @@ Run it:  py -3 strata_web.py
 
 import os
 import threading
+import time
 
 import webview
 
@@ -59,6 +60,13 @@ class Api:
         self._rec_frames = []
         self._whisper_model = None
         self._whisper_tier = None
+        self._whisper_used_at = None
+        self._release_note = ""
+        # Same idle-release policy as the desktop shell, and for the same
+        # measured reason: the model holds ~174 MB and releasing returns
+        # ~221 MB on a machine that lives at 400-600 MB free. A timer
+        # rather than Tk's after(), but the kernel deciding is identical.
+        self._start_memory_watch()
 
     # --- state ------------------------------------------------------------
     def bootstrap(self):
@@ -162,6 +170,45 @@ class Api:
     # would be throwing away the most expensive lessons in the project.
     # The browser is asked only to draw the button.
 
+    def _start_memory_watch(self):
+        """Check once a minute whether the voice model should be dropped."""
+        def tick():
+            try:
+                from strata_tools import voice_budget as vb
+                if self._whisper_model is not None and self._whisper_used_at:
+                    idle = time.monotonic() - self._whisper_used_at
+                    _total, free = vb.free_ram_mb()
+                    if vb.should_release(idle, free):
+                        self._whisper_model = None
+                        self._whisper_tier = None
+                        self._whisper_used_at = None
+                        import gc
+                        gc.collect()
+                        self._release_note = vb.release_reason(idle, free)
+            except Exception:
+                pass
+            timer = threading.Timer(60.0, tick)
+            timer.daemon = True      # never hold the app open
+            timer.start()
+        timer = threading.Timer(60.0, tick)
+        timer.daemon = True
+        timer.start()
+
+    def memory_note(self):
+        """Anything the page should say about memory, then forget it.
+
+        Polled by the page rather than pushed, because a background
+        thread reaching into the DOM is a race and this is not urgent
+        enough to be worth one.
+        """
+        note, self._release_note = self._release_note, ""
+        try:
+            from strata_tools import voice_budget as vb
+            _total, free = vb.free_ram_mb()
+        except Exception:
+            free = 0
+        return {"ok": True, "note": note, "freeMb": free}
+
     def start_recording(self):
         if self._rec_stream is not None:
             return {"ok": False, "error": "already recording"}
@@ -236,6 +283,7 @@ class Api:
                                      f"Ollama, or pick Fast. "
                                      f"[{type(e).__name__}]"}
                 self._whisper_tier = chosen
+            self._whisper_used_at = time.monotonic()
             segments, _info = self._whisper_model.transcribe(audio,
                                                              beam_size=1)
             text = " ".join(s.text.strip() for s in segments).strip()
