@@ -18,7 +18,18 @@ Measured 2026-09-01 on the owner's display, one scaling per process
     scaling 1.20 -> chrome 634      1.0 -> 529
 
 The relationship is linear, which is what lets this be arithmetic rather
-than a search: chrome(s) = CHROME_AT_1 * s.
+than a search -- but the constant is NOT the sum of widget heights alone.
+The packer inserts padding between every stacked row, and that padding is
+in no widget's reqheight, so:
+
+    chrome(s) = (CHROME_AT_1 + ROW_PADDING_AT_1) * s
+
+Leaving the padding out is not a rounding error. It made this module
+choose 0.91 on the owner's display and then, through its own
+``describe()``, report that 0.91 would clip -- the planner and the
+checker disagreeing inside one call. ``tools/fit_sweep.py`` settles such
+questions by building the real console and counting what Tk mapped; it
+is the authority, and these constants follow it rather than the reverse.
 
 Two levers, and both are needed, because at 1.75 the chrome overflows a
 617-pixel screen even with no transcript at all:
