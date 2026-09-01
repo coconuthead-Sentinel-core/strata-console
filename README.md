@@ -67,6 +67,11 @@ answers "Requirement already satisfied", and changes nothing.
   Whisper dictation (faster-whisper, Fast/Accurate/Best), 🔊 read the
   last reply aloud with a 🐢/🐇 speed picker, ❓ step-by-step guided
   tour.
+- **Clear** (button, `/clear`, or Ctrl+L) empties the transcript *and*
+  the context the model recalls. Both halves move together: clearing
+  only the view would leave the assistant quoting the conversation you
+  just cleared. Nothing is deleted -- a floor is raised in
+  `system_state` and the rows stay in SQLite.
 - **Context sources** the model itself never touches directly:
   - 🌐 **Web search** — checkbox or natural phrasing ("search the web
     for …"); DuckDuckGo lite via the standard library, no API key.

@@ -19,6 +19,8 @@ import tkinter.font as tkfont
 import customtkinter as ctk
 from datetime import datetime
 
+from strata_tools import session
+
 # Dyslexia-friendly reading fonts, best-first (ported from Sentinel Forge).
 # OpenDyslexic / Atkinson Hyperlegible are purpose-built for readability;
 # Comic Sans MS and Verdana are repeatedly cited in dyslexia research.
@@ -116,14 +118,43 @@ class StrataDB:
         self.conn.commit()
 
     def recent_threads(self, limit=3):
+        # Above the clear floor only. Clearing the window must also clear
+        # what the model recalls, or the "cleared" conversation gets
+        # quoted straight back at the owner.
         rows = self.conn.execute(
-            "SELECT timestamp, input, zone FROM memory_threads ORDER BY id DESC LIMIT ?",
-            (limit,),
+            "SELECT timestamp, input, zone FROM memory_threads "
+            "WHERE id > ? ORDER BY id DESC LIMIT ?",
+            (self.memory_floor(), limit),
         ).fetchall()
         return [dict(r) for r in reversed(rows)]  # oldest → newest
 
     def thread_count(self):
-        return self.conn.execute("SELECT COUNT(*) FROM memory_threads").fetchone()[0]
+        """Threads still in play — what /status should report."""
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM memory_threads WHERE id > ?",
+            (self.memory_floor(),)).fetchone()[0]
+
+    def archived_thread_count(self):
+        """Every thread ever stored, floor included. Nothing is deleted."""
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM memory_threads").fetchone()[0]
+
+    # --- the clear floor (archive, never delete) ------------------------------
+    def memory_floor(self):
+        return session.parse_floor(self.get_state(session.STATE_KEY))
+
+    def latest_thread_id(self):
+        row = self.conn.execute(
+            "SELECT MAX(id) AS top FROM memory_threads").fetchone()
+        return row["top"] or 0
+
+    def raise_memory_floor(self):
+        """Hide everything logged so far. Returns how many turns moved."""
+        before = self.thread_count()
+        floor = session.next_floor(self.memory_floor(),
+                                   self.latest_thread_id())
+        self.set_state(session.STATE_KEY, str(floor))
+        return before
 
     # --- saved nodes ----------------------------------------------------------
     def save_node(self, name, payload):
@@ -594,6 +625,10 @@ class StrataConsole:
                                       font=(self.font_family, self.font_size))
         self.input_box.pack(side="left", fill="x", expand=True, padx=(10, 6), pady=8)
         self.input_box.bind("<Return>", self.send_message)
+        # Ctrl+L clears, the way every terminal on this laptop does.
+        # Bound on the root so it works wherever focus happens to be.
+        self.root.bind_all("<Control-l>",
+                           lambda _e: (self.clear_window(), "break")[1])
 
         self.send_btn = ctk.CTkButton(input_frame, text="Send", command=self.send_message, width=100)
         self.send_btn.pack(side="left", padx=(0, 10), pady=8)
@@ -627,6 +662,7 @@ class StrataConsole:
             ("Mode: Yellow", lambda: self.change_zone("YELLOW")),
             ("Mode: Red", lambda: self.change_zone("RED")),
             ("/help", self.show_help),
+            ("🧹 Clear", self.clear_window),
         ]
 
         for text, command in buttons:
@@ -1237,8 +1273,30 @@ class StrataConsole:
             self.status_label.configure(text=self.pipeline.get_status())
         elif cmd == "/help":
             self.show_help()
+        elif cmd in ("/clear", "/new"):
+            self.clear_window()
         else:
             self._append_output(f"Unknown command: {command}. Try /help")
+
+    def clear_window(self):
+        """Empty the transcript AND stop the model recalling it.
+
+        Both halves or neither: clearing only the view leaves MemoryNode
+        feeding the last turns back to the model, which then quotes the
+        conversation the owner just cleared. Nothing is deleted -- the
+        rows stay in SQLite below a raised floor.
+        """
+        cleared = self.pipeline.db.raise_memory_floor()
+        archived = self.pipeline.db.archived_thread_count()
+        self.output_box.configure(state="normal")
+        self.output_box.delete("1.0", "end")
+        self.output_box.configure(state="disabled")
+        self._append_output(session.clear_report(cleared, archived))
+        self.status_label.configure(text=self.pipeline.get_status())
+        try:
+            self.input_box.focus_set()
+        except Exception:
+            pass
 
     def show_status(self):
         self._append_output(self.pipeline.get_status())
@@ -1262,6 +1320,7 @@ Available Commands:
 /mode green      → Switch to Green mode (active)
 /mode yellow     → Switch to Yellow mode (analytical)
 /mode red        → Switch to Red mode (archival)
+/clear           → Clear the window and the recalled context (Ctrl+L)
 /help            → Show this help
 """
         self._append_output(help_text)
