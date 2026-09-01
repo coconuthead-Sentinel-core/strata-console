@@ -45,6 +45,20 @@ dying inside MKL. `tools/voice_check.py` runs capture, budget, and
 transcription as separate stages so a voice problem can be attributed to
 the right one.
 
+That attribution has one prior stage, learned the hard way. Dictation
+once failed with nothing wrong with the microphone, the RAM budget, or
+Whisper: the launcher started the Windows Store Python while
+`sounddevice` and `faster-whisper` were installed in the ordinary
+per-user Python, so the import failed and the owner read it as a dead
+mic. The bench missed it because `py -3` resolved to the *other*
+interpreter and passed. `strata_tools/interpreter.py` now holds that
+rule in pure, tested form: `launch_strata.vbs` prefers an interpreter
+that actually carries the voice packages, `tools/voice_check.py` reports
+which interpreter it is running under and which one a double-click would
+use, and the console's own error names `sys.executable` and the exact
+pip line for it -- because a bare `pip install` resolves elsewhere,
+answers "Requirement already satisfied", and changes nothing.
+
 ## Features (v1.1)
 
 - **Chat console** with dyslexia-friendly reading fonts (OpenDyslexic
@@ -81,8 +95,16 @@ ollama pull llama3.2:3b
 py -3 strata_console.py
 ```
 
-Or double-click `launch_strata.vbs` for a no-console launch (resolves a
-real Python interpreter, avoiding the Windows Store stub).
+Or double-click `launch_strata.vbs` for a no-console launch. It resolves
+a real `pythonw.exe` by full path (so the Store alias, which does not
+resolve when a script starts it, is never used) and prefers an
+interpreter that already has the voice packages installed.
+
+To see which interpreter a double-click would actually use:
+
+```powershell
+cscript //nologo launch_strata.vbs /which
+```
 
 ## Tests
 
@@ -92,8 +114,8 @@ py -3 -m unittest discover -s tests
 
 Covers the context tools (cached file indexing including Excel
 extraction and repo-directory exclusion, and the pure retrieval ranking)
-and the voice path (capture-level verdicts and the Whisper RAM
-budget).
+and the voice path (capture-level verdicts, the Whisper RAM budget, and
+the interpreter rule that decides whether dictation can run at all).
 
 ## Honest scope
 

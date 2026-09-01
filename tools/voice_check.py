@@ -126,19 +126,50 @@ def stage_transcribe(audio, tier):
     return 0
 
 
+def launcher_choice(vbs_path):
+    """Ask launch_strata.vbs which interpreter a double-click would use.
+
+    Impure and best-effort: if cscript is unavailable the bench still
+    runs, it just cannot compare the two paths for the owner.
+    """
+    import subprocess
+    if not os.path.exists(vbs_path):
+        return "unknown (launch_strata.vbs not found)"
+    try:
+        out = subprocess.run(["cscript", "//nologo", vbs_path, "/which"],
+                             capture_output=True, text=True, timeout=30)
+        return out.stdout.strip() or "unknown (no answer from launcher)"
+    except Exception as e:
+        return f"unknown ({type(e).__name__}: {e})"
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--device", type=int, default=None)
     ap.add_argument("--seconds", type=int, default=6)
     ap.add_argument("--tier", choices=list(TIER_MODELS), default="Fast")
     args = ap.parse_args(argv)
-    try:
-        import numpy as np
-        import sounddevice as sd
-    except Exception as e:
-        print(f"Missing a dependency: {e}")
-        print("Install with: py -3 -m pip install sounddevice numpy")
+    # Stage 0 exists because stages 1-3 once all passed while the console
+    # could not record a thing. The bench was run with "py -3" and the
+    # console was launched with the Store Python -- two different
+    # interpreters, only one of which had the voice packages. A bench
+    # that does not name its interpreter is not checking the owner's path.
+    from strata_tools import interpreter as interp
+    executable, missing = interp.current_report()
+    print(f"[0/3] interpreter  {executable}")
+    launcher = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "launch_strata.vbs")
+    print(f"      the console launches: {launcher_choice(launcher)}")
+    if missing:
+        indent = chr(10) + "      "
+        print("      " + interp.explain_missing(
+            executable, missing).replace(chr(10), indent))
         return 3
+    print("      voice packages present: "
+          + ", ".join(interp.VOICE_DEPS))
+    import numpy as np
+    import sounddevice as sd
+    print()
     list_devices(sd)
     audio, name = stage_capture(sd, np, args.device, args.seconds)
     tier = stage_budget(args.tier)

@@ -849,12 +849,18 @@ class StrataConsole:
         if self._rec_stream is not None:
             self._stop_voice()
             return
-        try:
-            import sounddevice as sd
-        except Exception as e:
-            self._append_output(f"🎤 Voice needs the sounddevice package "
-                                f"(pip install sounddevice): {e}")
+        # Preflight BOTH voice packages against the interpreter that is
+        # actually running, before a word is recorded. Checking only
+        # sounddevice here used to let the owner talk for twenty seconds
+        # and only then hit a missing faster_whisper, reported as
+        # "Transcription failed" -- which reads as a dead microphone.
+        from strata_tools import interpreter as interp
+        executable, missing = interp.current_report()
+        if missing:
+            self._append_output("🎤 " + interp.explain_missing(executable,
+                                                            missing))
             return
+        import sounddevice as sd
         self._rec_frames = []
         try:
             info = sd.query_devices(kind="input")
