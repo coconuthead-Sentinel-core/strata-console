@@ -10,6 +10,35 @@ root cause and the guard.
 
 ---
 
+## [1.4.1] — 2026-09-02
+
+### Added
+- **Read-along highlighting** in the web shell. While an answer is read
+  aloud the sentence being spoken is highlighted and the current word is
+  underlined, so the text can be followed by eye and by ear at once.
+  Click any sentence to hear it again from that point; Escape stops.
+
+  The alignment problem, and how it is solved: what is *spoken* is not
+  always what is *shown* — `speech.speakable()` turns "$32" into
+  "thirty-two dollars" so the engine pronounces it. The page therefore
+  splits the **rendered** text and Python returns each piece's spoken
+  form plus a `matches` flag. Sentence highlighting is exact because
+  both sides index one array. Word highlighting uses the engine's
+  character offsets, which only point into the displayed string when
+  `matches` is true — otherwise it is skipped rather than lighting up
+  the wrong word.
+
+  Verified in a browser harness: a sentence running across `**bold**`
+  stays one highlight over three spans; code blocks are excluded from
+  what is read; every character offset maps to the correct word,
+  including across an element boundary.
+
+  Both highlight colours keep the body text above 4.5:1 (8.04:1 and
+  6.04:1 measured), and the current word carries an underline as well as
+  a background, so the two levels are not distinguished by colour alone.
+
+---
+
 ## [1.4.0] — 2026-09-02
 
 A second shell, and the engine split out so both can share it.

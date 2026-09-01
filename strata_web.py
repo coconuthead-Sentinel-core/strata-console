@@ -129,6 +129,31 @@ class Api:
         """Markdown out, numbers spelled out, for the page's own TTS."""
         return {"ok": True, "text": speech.speakable(raw or "")}
 
+    def speakable_batch(self, sentences):
+        """Speakable form of each sentence, in order. One bridge call.
+
+        Read-along needs the SPOKEN text and the DISPLAYED text to stay
+        aligned sentence for sentence, so the page splits the rendered
+        text (which is what the reader actually sees) and asks here for
+        each piece's spoken form. Splitting in Python and rendering in
+        JavaScript would give two different sentence counts the first
+        time an abbreviation appeared, and the highlight would drift.
+
+        ``matches`` tells the page whether a sentence is spoken exactly
+        as written. When it is, word-level highlighting can trust the
+        speech engine's character offsets; when the text was expanded
+        ("$32" -> "thirty-two dollars") those offsets point into a
+        different string, so the page falls back to highlighting the
+        sentence only rather than lighting up the wrong word.
+        """
+        out = []
+        for raw in (sentences or []):
+            text = str(raw or "")
+            spoken = speech.speakable(text)
+            out.append({"spoken": spoken,
+                        "matches": spoken.strip() == text.strip()})
+        return {"ok": True, "sentences": out}
+
     # --- dictation --------------------------------------------------------
     #
     # Capture and transcription stay in Python: the microphone work, the

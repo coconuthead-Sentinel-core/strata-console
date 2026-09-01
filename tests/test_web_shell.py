@@ -154,5 +154,76 @@ class RenderingSafetyTests(unittest.TestCase):
         self.assertIn("esc(src)", body)
 
 
+class ReadAlongTests(unittest.TestCase):
+    """Following the words while hearing them.
+
+    The alignment rule: the page splits what is DISPLAYED, Python returns
+    the spoken form of each piece plus whether the two are identical.
+    Word-level highlighting uses the speech engine's character offsets,
+    which only index the displayed string when they are.
+    """
+
+    def setUp(self):
+        from strata_tools import speech
+        self.speech = speech
+
+    def test_a_plain_sentence_is_spoken_as_written(self):
+        text = "The console is ready."
+        self.assertEqual(self.speech.speakable(text), text)
+
+    def test_an_expanded_sentence_is_not(self):
+        # "$32" -> "thirty-two dollars": the offsets no longer line up,
+        # which is exactly what the matches flag exists to report.
+        text = "It cost $32 today."
+        self.assertNotEqual(self.speech.speakable(text), text)
+
+    def test_the_page_asks_for_word_highlighting_only_when_safe(self):
+        js = open(JS_PATH, encoding="utf-8").read()
+        self.assertIn("item.matches", js)
+        # onboundary must be bound behind the matches check, not always.
+        head = js[:js.index("utter.onboundary")]
+        self.assertIn("if (item.matches)", head)
+
+    def test_code_blocks_are_never_read_aloud(self):
+        js = open(JS_PATH, encoding="utf-8").read()
+        self.assertIn("closest('pre')", js)
+
+    def test_a_sentence_is_tracked_by_index_not_by_element(self):
+        # A sentence can run across inline markup and so be several
+        # spans; they must share one index or half of it lights up.
+        js = open(JS_PATH, encoding="utf-8").read()
+        self.assertIn("span.dataset.i = String(index)", js)
+        self.assertIn("spans[index].push(span)", js)
+
+    def test_stopping_clears_the_highlight(self):
+        js = open(JS_PATH, encoding="utf-8").read()
+        stop = js[js.index("function stopReading("):]
+        self.assertIn("clearHighlight()", stop[:400])
+
+    def test_the_highlights_are_declared_in_the_stylesheet(self):
+        css = open(CSS_PATH, encoding="utf-8").read()
+        self.assertIn(".s.reading", css)
+        self.assertIn(".w.now", css)
+
+    def test_both_highlights_keep_the_text_readable(self):
+        # A highlight that makes its own text harder to read has
+        # defeated itself. Measured, not assumed.
+        props = custom_properties()
+        css = open(CSS_PATH, encoding="utf-8").read()
+        for marker in (".s.reading", ".w.now"):
+            block = css[css.index(marker):css.index(marker) + 260]
+            colour = re.search(r"background:\s*(#[0-9A-Fa-f]{6})", block)
+            self.assertIsNotNone(colour, marker)
+            with self.subTest(marker=marker):
+                self.assertTrue(meets_aa(contrast_ratio(props["--ink"],
+                                                        colour.group(1))))
+
+    def test_the_word_marker_is_not_colour_alone(self):
+        # WCAG 1.4.1 applies to a reading aid as much as to a button.
+        css = open(CSS_PATH, encoding="utf-8").read()
+        block = css[css.index(".w.now"):css.index(".w.now") + 260]
+        self.assertIn("underline", block)
+
+
 if __name__ == "__main__":
     unittest.main()
