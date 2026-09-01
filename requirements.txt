@@ -1,0 +1,33 @@
+# Strata Console — dependencies.
+#
+# The functional core in strata_tools/ is standard-library only, by scope
+# decision (docs/SCOPE.md §2). Everything below is either the shell or an
+# optional capability that degrades gracefully when absent — the console
+# starts and answers without any of the optional entries installed.
+#
+# INSTALL INTO THE INTERPRETER THAT ACTUALLY RUNS THE APP. This laptop has
+# two Python 3.13 installs and a bare `pip install` targets the wrong one;
+# that is what took dictation down. Check with:
+#     cscript //nologo launch_strata.vbs /which
+
+# --- required: the desktop shell -----------------------------------------
+customtkinter>=5.2
+
+# --- optional: the local model (template mode without it) -----------------
+ollama>=0.3
+
+# --- optional: voice in (🎤 dictation) ------------------------------------
+# Both are needed together; one without the other is a half-built mic.
+sounddevice>=0.4
+faster-whisper>=1.0
+
+# --- optional: document context (☁ OneDrive, 📎 upload) -------------------
+python-docx>=1.1
+pypdf>=4.0
+openpyxl>=3.1
+
+# --- optional: web search (🌐) --------------------------------------------
+beautifulsoup4>=4.12
+
+# Read-aloud (🔊) needs nothing installed: it uses the Windows SAPI voices
+# already on the machine, driven through PowerShell.

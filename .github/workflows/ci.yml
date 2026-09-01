@@ -1,0 +1,65 @@
+name: CI
+
+# Automated quality gate (SWEBOK: Verification & Validation).
+# Adapted from Sentinel Forge's workflow — the transfer that carries no
+# application code at all, and the one that raises this repo to standalone
+# value. Runs on every push and pull request to main so a syntax error or a
+# failing test can never silently reach the source of truth.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:        # allow a manual run from the Actions tab
+
+jobs:
+  build-and-test:
+    name: py_compile + unit tests
+    runs-on: windows-latest   # the app targets Windows 11; test on the real platform
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.11", "3.13" ]   # min supported, and the tested version
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Only what the tests actually import. The optional capabilities
+      # (voice, documents, web, the local model) are all behind try/except
+      # and must stay optional — installing them here would hide a
+      # regression that breaks the degraded path the owner relies on.
+      - name: Install shell dependency
+        run: python -m pip install --quiet customtkinter
+
+      # The floor: everything must at least parse.
+      - name: Syntax check (py_compile)
+        run: |
+          python -m py_compile strata_console.py
+          python -m py_compile turbo_console.py
+          python -m compileall -q strata_tools tools tests
+
+      # The ceiling: the pure functional core stays green. These tests open
+      # no window and touch no real database — every one that needs SQLite
+      # builds a throwaway file, so the live quantum_nexus_forge.db is never
+      # written by a test run.
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      # Proves the console still starts when NOTHING optional is installed —
+      # the path a fresh machine takes, and the one that silently rots.
+      - name: Degraded-mode import check
+        run: python -c "import strata_console; print('template mode import OK')"
+
+      # Informational; does not fail the build.
+      - name: Coverage report (functional core)
+        run: |
+          python -m pip install --quiet coverage
+          python -m coverage run --source=strata_tools -m unittest discover -s tests
+          python -m coverage report
