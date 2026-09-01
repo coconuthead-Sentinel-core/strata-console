@@ -121,8 +121,15 @@ shells sit on top of it:
 
 | | Launch | What it is |
 | --- | --- | --- |
-| **Desktop** (default) | `launch_strata.vbs` | CustomTkinter. The shipped, tested one. |
-| **Web** | `launch_strata_web.vbs` | HTML/CSS/JS in a native WebView2 window via pywebview. |
+| **Desktop** (default) | `launch_strata.vbs` — desktop icon **Strata Console** (violet tile, ⚡) | CustomTkinter. The shipped, tested one. |
+| **Web** | `launch_strata_web.vbs` — desktop icon **Strata Console (Web)** (dark tile, blue **W**) | HTML/CSS/JS in a native WebView2 window via pywebview. Adds read-along highlighting. |
+
+The two icons differ by colour and glyph, not only by name: they sit side
+by side on the desktop, and telling them apart should not require reading
+the label. `make_icons.py` generates them.
+
+> Renaming or moving a launcher orphans its shortcut. If either `.vbs`
+> moves, repoint the matching `.lnk`.
 
 Both use the **same database, modes, voice path and Ollama daemon**.
 Neither is a rewrite of the other; the web shell exists to be compared
