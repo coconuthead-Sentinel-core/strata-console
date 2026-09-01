@@ -62,6 +62,30 @@ def make(path, bg, accent, top, bottom):
     print("wrote", path)
 
 
+def make_wordmark(path, bg, fg, word):
+    """A tile that is just the word, as large as it will go.
+
+    For the Start menu, where the entries sit in a plain alphabetical
+    list and the icon is small. A glyph-plus-caption tile turns to mush
+    at 32px; one word filling the tile stays legible, and the colour
+    then carries which of the two shells it is.
+
+    The word is auto-fitted rather than set at a fixed size, for the
+    same reason the caption is: a label that runs off its own tile is
+    worse than a smaller one.
+    """
+    S = 256
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([6, 6, S - 6, S - 6], radius=44, fill=bg,
+                        outline=fg, width=6)
+    centered(d, (0, 0, S, S), word, fit(d, word, S - 56, start=96, floor=24),
+             fg)
+    img.save(path, sizes=[(256, 256), (128, 128), (64, 64), (48, 48),
+                          (32, 32), (16, 16)])
+    print("wrote", path)
+
+
 # Quantum Nexus Forge — deep violet tile, cyan accent
 make(os.path.join(HERE, "qnf_icon.ico"), (30, 16, 54, 255), (0, 229, 255, 255), "⚡", "NEXUS FORGE")
 # Turbo — black tile, lime-green accent
@@ -72,3 +96,17 @@ make(os.path.join(HERE, "turbo_icon.ico"), (12, 12, 12, 255), (124, 252, 0, 255)
 # a sibling of the desktop shell rather than a different application.
 make(os.path.join(HERE, "strata_web_icon.ico"), (18, 22, 26, 255),
      (95, 165, 214, 255), "W", "STRATA WEB")
+
+# Start-menu wordmarks. Both black; the LETTERING is what separates them,
+# because in the Start menu's alphabetical list the two entries sit
+# directly on top of each other under S and the name alone is a slow way
+# to tell them apart.
+#   white -> the desktop console (the original)
+#   gold  -> the web shell
+# Colour is the fast cue, not the only one: the shortcut names still say
+# which is which, so the pair does not depend on distinguishing white
+# from gold at 32 pixels.
+make_wordmark(os.path.join(HERE, "strata_start_desktop.ico"),
+              (0, 0, 0, 255), (255, 255, 255, 255), "STRATA")
+make_wordmark(os.path.join(HERE, "strata_start_web.ico"),
+              (0, 0, 0, 255), (212, 175, 55, 255), "STRATA")
