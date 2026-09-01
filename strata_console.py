@@ -19,7 +19,8 @@ import tkinter.font as tkfont
 import customtkinter as ctk
 from datetime import datetime
 
-from strata_tools import dictation, session, speech, window_fit
+from strata_tools import (dictation, selection, session, speech,
+                           window_fit)
 
 # Dyslexia-friendly reading fonts, best-first (ported from Sentinel Forge).
 # OpenDyslexic / Atkinson Hyperlegible are purpose-built for readability;
@@ -629,6 +630,10 @@ class StrataConsole:
         # Bound on the root so it works wherever focus happens to be.
         self.root.bind_all("<Control-l>",
                            lambda _e: (self.clear_window(), "break")[1])
+        # Ctrl+A selects all of whatever is focused. Tk's default binding
+        # is beginning-of-line, which is not what anyone on Windows
+        # expects from this key.
+        self.root.bind_all("<Control-a>", self._select_all_focused)
 
         self.send_btn = ctk.CTkButton(input_frame, text="Send", command=self.send_message, width=100)
         self.send_btn.pack(side="left", padx=(0, 10), pady=8)
@@ -1295,6 +1300,19 @@ class StrataConsole:
         else:
             self._append_output(f"Unknown command: {command}. Try /help")
 
+    def _select_all_focused(self, _event=None):
+        """Select everything in the focused box, whichever species it is.
+
+        The kernel raises for a widget that supports neither API; caught
+        here so a stray Ctrl+A on a label is a no-op rather than a
+        traceback in the Tk callback.
+        """
+        try:
+            selection.select_all(self.root.focus_get())
+        except Exception:
+            return None
+        return "break"
+
     def clear_window(self):
         """Empty the transcript AND stop the model recalling it.
 
@@ -1338,6 +1356,7 @@ Available Commands:
 /mode yellow     → Switch to Yellow mode (analytical)
 /mode red        → Switch to Red mode (archival)
 /clear           → Clear the window and the recalled context (Ctrl+L)
+                   (Ctrl+A selects all of whatever box has focus)
 /help            → Show this help
 
 Speaking punctuation while you dictate (🎤):
