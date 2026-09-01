@@ -128,8 +128,18 @@ The two icons differ by colour and glyph, not only by name: they sit side
 by side on the desktop, and telling them apart should not require reading
 the label. `make_icons.py` generates them.
 
-> Renaming or moving a launcher orphans its shortcut. If either `.vbs`
-> moves, repoint the matching `.lnk`.
+Both also appear in the **Start menu** under **S**, with wordmark icons
+that differ by lettering colour — **white** for the desktop console,
+**gold** for the web shell — because in an alphabetical list the two
+names sit directly on top of each other and reading the label is the
+slow way to tell them apart.
+
+Start-menu shortcuts live in
+`%APPDATA%\Microsoft\Windows\Start Menu\Programs`.
+
+> Renaming or moving a launcher orphans its shortcut. Each `.vbs` now has
+> **two** shortcuts pointing at it — one on the desktop, one in the Start
+> menu — so if a launcher moves, repoint both.
 
 Both use the **same database, modes, voice path and Ollama daemon**.
 Neither is a rewrite of the other; the web shell exists to be compared
