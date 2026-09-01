@@ -132,5 +132,42 @@ class DatabaseFloorTests(unittest.TestCase):
             self.db = reopened
 
 
+class DatabasePathBindingTests(unittest.TestCase):
+    """DB_PATH must be resolved when a connection is made, not when the
+    class is defined.
+
+    The original `def __init__(self, path=DB_PATH)` captured the module
+    constant at import time, so a tool that set strata_console.DB_PATH to
+    a throwaway file was silently ignored and wrote to the owner's real
+    database. The accessibility probes did exactly that on 2026-09-01 and
+    pressed A+ against the live store, changing a saved font size.
+    """
+
+    def test_setting_db_path_after_import_is_honoured(self):
+        import strata_console
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        original = strata_console.DB_PATH
+        strata_console.DB_PATH = tmp.name
+        try:
+            db = strata_console.StrataDB()
+            self.assertEqual(db.path, tmp.name)
+            db.conn.close()
+        finally:
+            strata_console.DB_PATH = original
+            os.unlink(tmp.name)
+
+    def test_an_explicit_path_still_wins(self):
+        import strata_console
+        tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp.close()
+        try:
+            db = strata_console.StrataDB(path=tmp.name)
+            self.assertEqual(db.path, tmp.name)
+            db.conn.close()
+        finally:
+            os.unlink(tmp.name)
+
+
 if __name__ == "__main__":
     unittest.main()

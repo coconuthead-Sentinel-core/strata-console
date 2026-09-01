@@ -10,6 +10,48 @@ root cause and the guard.
 
 ---
 
+## [1.3.0] — 2026-09-01
+
+The accessibility pass. Planned in `docs/ACCESSIBILITY_PLAN.md`, which
+also sets out honestly which standards actually bind a personal desktop
+tool (none) and which one we hold to anyway (WCAG 2.1 AA, plus the
+cognitive criteria added in 2.2).
+
+### Fixed
+- **Thirteen controls were never drawn**, including the transcript —
+  FB-005. The chrome needed 919px in a 486px window and Tk silently
+  stopped mapping children. Verified pre-existing at commit `807c5ba`.
+- **Every button was unreachable by keyboard** — FB-006. The real Tab
+  ring held 2 widgets of 22. WCAG 2.1.1, Level A.
+- `StrataDB` resolved `DB_PATH` as a default argument, so tools that
+  redirected it still wrote to the real database — NM-005.
+
+### Added
+- **Keyboard operation** for every control, with Return and Space, and a
+  visible focus ring whose colour clears 3:1 on every surface it can
+  land on (`strata_tools/keyboard.py`).
+- **Colour-coded modes** — green, amber and red, each measured against
+  the label text at AA. The active mode also carries a bullet and a
+  border, so colour is never the only cue (WCAG 1.4.1).
+- **App-wide text scaling**: A+/A− now moves 22 widgets instead of 2,
+  with the chrome capped at a measured 12pt so growing text cannot
+  re-hide controls.
+- `strata_tools/layout.py` — content-fits-the-window as a tested kernel;
+  `tools/a11y_check.py` and `tools/layout_probe.py` as benches.
+
+### Changed
+- The decorative title banner is gone (the window title bar already said
+  it) and status moved into the row below — one fewer stacked row.
+- The dyslexia-font comment in `strata_console.py` was **corrected**: the
+  research does not support the claim it made. The font menu stays,
+  because reader *choice* is the intervention that is supported.
+
+### Known
+- Reading width is ~53 characters against BDA guidance of 60–80. Short
+  rather than long, and reported rather than forced.
+
+---
+
 ## [1.2.0] — 2026-09-01
 
 The completion pass. Every capability the console already advertised now

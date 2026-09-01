@@ -19,12 +19,32 @@ import tkinter.font as tkfont
 import customtkinter as ctk
 from datetime import datetime
 
-from strata_tools import (dictation, selection, session, speech,
-                           window_fit)
+from strata_tools import (dictation, keyboard, layout, modes,
+                           selection, session, speech, window_fit)
 
-# Dyslexia-friendly reading fonts, best-first (ported from Sentinel Forge).
-# OpenDyslexic / Atkinson Hyperlegible are purpose-built for readability;
-# Comic Sans MS and Verdana are repeatedly cited in dyslexia research.
+# Reading fonts offered to the owner, best-first (ported from Sentinel
+# Forge). CORRECTED 2026-09-01 -- the previous comment here claimed these
+# were "repeatedly cited in dyslexia research", which overstates what the
+# evidence supports, and a claim in this repository has to survive
+# checking.
+#
+# What controlled studies actually found: a specialised dyslexia face
+# (OpenDyslexic) produced NO improvement in reading rate or accuracy
+# against Arial and Times New Roman, for individual readers or as a
+# group, and some work measured it slower. Participants did not report
+# preferring it. The literature overall is mixed at best.
+#
+# What IS well supported, and what this list is really for:
+#   * the reader choosing their own face, size and spacing -- which is a
+#     WCAG principle rather than a font claim, and the reason this menu
+#     exists at all;
+#   * larger text and more line spacing;
+#   * shorter line lengths (British Dyslexia Association: 60-80 chars).
+#
+# So the menu stays -- choice is the evidence-backed feature -- and the
+# claim goes. Atkinson Hyperlegible is kept on separate and better
+# grounds: the Braille Institute designed it for LOW VISION, which is a
+# different and better-evidenced claim than a dyslexia one.
 DYSLEXIA_FONT_PREFS = [
     "OpenDyslexic", "OpenDyslexic3", "Atkinson Hyperlegible",
     "Comic Sans MS", "Verdana", "Tahoma", "Segoe UI", "Arial",
@@ -82,8 +102,15 @@ GLYPH_LOOKUP = {g["glyph"]: g for g in ALL_GLYPHS}
 class StrataDB:
     """Local SQLite store for context entries, saved nodes, and system state."""
 
-    def __init__(self, path=DB_PATH):
-        self.path = path
+    def __init__(self, path=None):
+        # Resolved at CALL time, not bound as a default argument. A
+        # default of `path=DB_PATH` captures the module constant when
+        # the class is defined, so a tool or test that later sets
+        # strata_console.DB_PATH to a throwaway file is quietly ignored
+        # and writes to the owner's real database instead. That is
+        # exactly what happened to the accessibility probes on
+        # 2026-09-01 -- they pressed A+ against the live store.
+        self.path = path or DB_PATH
         # check_same_thread=False: customtkinter callbacks may touch the DB
         self.conn = sqlite3.connect(self.path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
@@ -509,25 +536,74 @@ class StrataConsole:
         self.root = ctk.CTk()
         self.root.title("Strata Console — local-first NLP inference pipeline")
 
-        # CustomTkinter multiplies the geometry we pass by the display
-        # scaling factor. The rule that compensates for it now lives in
-        # strata_tools/window_fit.py with tests — same arithmetic as
-        # before, but graded headlessly instead of trusted inline.
         self.root.update_idletasks()
+
+        # ORDER MATTERS HERE, and getting it wrong is how the window
+        # ended up 700px tall on a 617px screen. Two traps, both
+        # measured rather than reasoned about:
+        #
+        #  1. TWO COORDINATE SYSTEMS. Windows' SPI_GETWORKAREA reports
+        #     PHYSICAL pixels, and CustomTkinter turns on DPI awareness
+        #     when it initialises -- so a work-area query made after
+        #     ctk.CTk() answered 1032px of height while Tk's own
+        #     winfo_screenheight() still said 617. Mixing the two sized
+        #     the window off the bottom of the desktop. Everything here
+        #     now stays in Tk's coordinate system, which is the one the
+        #     geometry manager actually uses.
+        #
+        #  2. TWO SCALING FACTORS. CustomTkinter keeps widget scaling
+        #     (how large controls are drawn) separately from window
+        #     scaling (what geometry() multiplies by), and the widget
+        #     decision must be applied BEFORE the window scaling is read.
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+
+        # Make the CONTENT fit the window, not just the window fit the
+        # screen. At the inherited scaling the chrome needed 919px in a
+        # 486px window, so Tk silently stopped mapping children and
+        # thirteen controls -- the transcript among them -- were never
+        # drawn. Must be set before any widget is constructed.
+        _, want_h = window_fit.target_pixels(screen_w, screen_h)
+        self.widget_scaling = layout.plan_widget_scaling(want_h)
+        ctk.set_widget_scaling(self.widget_scaling)
+        self.layout_note = layout.describe(want_h, self.widget_scaling)
+
+        # NOW read the window scaling and compensate for it.
         try:
             scaling = ctk.ScalingTracker.get_window_scaling(self.root)
         except Exception:
             scaling = 1.0
         geometry, min_w, min_h = window_fit.plan_geometry(
-            self.root.winfo_screenwidth(),
-            self.root.winfo_screenheight(), scaling)
+            screen_w, screen_h, scaling)
         self.root.geometry(geometry)
         self.root.minsize(min_w, min_h)
 
         self._setup_accessibility()
         self._create_widgets()
 
+        # WCAG 2.1.1 Keyboard (Level A). CustomTkinter builds controls
+        # from a Canvas plus a Label, neither of which joins the Tab
+        # ring, so before this call the console had exactly two
+        # keyboard-reachable widgets out of twenty-two. Measured, not
+        # assumed -- tools/a11y_check.py reports the real ring.
+        self._keyboard_controls = keyboard.enable_tree(self.root)
+        # The transcript is state="disabled" so it cannot be typed into,
+        # and Tk drops disabled widgets out of the focus ring entirely.
+        # A keyboard user could reach every button and not the text they
+        # produce, so focus and scrolling are restored without making it
+        # editable.
+        keyboard.enable_reading_surface(self.output_box,
+                                        keyboard._ring_on,
+                                        keyboard._ring_off)
+
     # ── Accessibility (dyslexia fonts + size; persisted across restarts) ──────
+    @staticmethod
+    def _walk(widget):
+        """Every widget beneath (and including) this one."""
+        yield widget
+        for child in widget.winfo_children():
+            yield from StrataConsole._walk(child)
+
     def _setup_accessibility(self):
         """Pick the best installed dyslexia-friendly font and restore saved prefs."""
         try:
@@ -543,16 +619,39 @@ class StrataConsole:
         except (TypeError, ValueError):
             self.font_size = 14
 
+    _UI_FONT_KINDS = ("CTkButton", "CTkLabel", "CTkCheckBox",
+                      "CTkOptionMenu", "CTkComboBox", "CTkSwitch")
+
     def _apply_font(self):
-        """Apply the current font + size to the reading surfaces and persist it."""
+        """Apply the current font + size to the whole interface, and persist it.
+
+        A+/A- used to move two widgets out of twenty-two, which is a
+        text-resize control that mostly does not resize text. It now
+        moves the reading surfaces without a ceiling and the chrome up to
+        a measured cap -- past that cap the rows stop fitting and
+        controls disappear, which would trade WCAG 1.4.4 for the far
+        worse failure this console just finished fixing.
+        """
         for w in (getattr(self, "output_box", None), getattr(self, "input_box", None)):
             if w is not None:
                 try:
                     w.configure(font=(self.font_family, self.font_size))
                 except Exception:
                     pass
+
+        ui_size = layout.ui_font_size(self.font_size)
+        for widget in self._walk(self.root):
+            if type(widget).__name__ in self._UI_FONT_KINDS:
+                try:
+                    widget.configure(font=(self.font_family, ui_size))
+                except Exception:
+                    pass
         if getattr(self, "size_label", None) is not None:
-            self.size_label.configure(text=f"{self.font_size}pt")
+            # Say when the interface has stopped following, so a capped
+            # A+ reads as a designed limit rather than a dead button.
+            capped = " (menus capped)" if layout.ui_font_is_capped(
+                self.font_size) else ""
+            self.size_label.configure(text=f"{self.font_size}pt{capped}")
         self.pipeline.db.set_state("font_family", self.font_family)
         self.pipeline.db.set_state("font_size", str(self.font_size))
 
@@ -570,23 +669,16 @@ class StrataConsole:
         self._apply_font()
 
     def _create_widgets(self):
-        title_label = ctk.CTkLabel(
-            self.root,
-            text="Strata Console — local-first NLP inference pipeline",
-            font=ctk.CTkFont(size=20, weight="bold")
-        )
-        title_label.pack(side="top", pady=(12, 4))
+        # The window title bar already says what this application is, so
+        # a 86px banner repeating it cost the transcript a third of its
+        # height for no information. Status moves into the row below,
+        # which is one fewer stacked row -- the shop design law caps a
+        # screen at five major choices, and this had seven.
+        self.root.title("Strata Console — local-first NLP inference pipeline")
 
-        self.status_label = ctk.CTkLabel(
-            self.root,
-            text=self.pipeline.get_status(),
-            font=ctk.CTkFont(size=14)
-        )
-        self.status_label.pack(side="top", pady=(0, 6))
-
-        # --- Accessibility row: dyslexia-friendly font + text size ---
+        # --- Reading row: font, text size, and live status ---
         access = ctk.CTkFrame(self.root)
-        access.pack(side="top", fill="x", padx=16, pady=(0, 4))
+        access.pack(side="top", fill="x", padx=16, pady=(6, 4))
         ctk.CTkLabel(access, text="Reading font:").pack(side="left", padx=(10, 6), pady=6)
         self.font_menu = ctk.CTkOptionMenu(
             access, values=self.available_fonts, command=self._on_font_change, width=190
@@ -597,6 +689,11 @@ class StrataConsole:
         ctk.CTkButton(access, text="A+", width=44, command=self.bigger_text).pack(side="left", padx=2, pady=6)
         self.size_label = ctk.CTkLabel(access, text=f"{self.font_size}pt")
         self.size_label.pack(side="left", padx=(8, 6), pady=6)
+        self.status_label = ctk.CTkLabel(access,
+                                         text=self.pipeline.get_status(),
+                                         anchor="e")
+        self.status_label.pack(side="right", fill="x", expand=True,
+                               padx=(12, 12), pady=6)
 
         # --- Floating toolbar (ported from Sentinel Forge): 🎤 dictation,
         #     🔊 read-aloud with speed, ❓ tour, dockable/floatable. ---
@@ -663,9 +760,6 @@ class StrataConsole:
         buttons = [
             ("/status", self.show_status),
             ("/lexicon", self.show_lexicon),
-            ("Mode: Green", lambda: self.change_zone("GREEN")),
-            ("Mode: Yellow", lambda: self.change_zone("YELLOW")),
-            ("Mode: Red", lambda: self.change_zone("RED")),
             ("/help", self.show_help),
             ("🧹 Clear", self.clear_window),
         ]
@@ -673,6 +767,22 @@ class StrataConsole:
         for text, command in buttons:
             btn = ctk.CTkButton(button_frame, text=text, command=command, width=110)
             btn.pack(side="left", expand=True, padx=4, pady=8)
+
+        # Colour-coded mode buttons. They were three identical blue
+        # rectangles with the live mode named only in the status line;
+        # a colour-carried category is pre-attentive, so it costs no
+        # working memory to find. Colour is never the ONLY cue though
+        # (WCAG 1.4.1) -- the active mode also carries a bullet in its
+        # label and a raised border. Every colour is measured against
+        # the text and the focus ring in tests/test_modes.py.
+        self.mode_buttons = {}
+        for key in modes.ORDER:
+            btn = ctk.CTkButton(
+                button_frame, width=110,
+                command=lambda k=key: self.change_zone(k),
+                **modes.appearance(key, key == self.pipeline.current_zone))
+            btn.pack(side="left", expand=True, padx=4, pady=8)
+            self.mode_buttons[key] = btn
 
         # --- Output box fills whatever space is left in the middle ---
         self.output_box = ctk.CTkTextbox(self.root, font=(self.font_family, self.font_size))
@@ -1342,9 +1452,24 @@ class StrataConsole:
             text += f"{g['glyph']}  {g['name']}: {g['function']}\n"
         self._append_output(text)
 
+    def _refresh_mode_buttons(self):
+        """Repaint every mode button for the live mode.
+
+        All three are repainted, not just the new one -- repainting only
+        the winner leaves the previous mode still looking active, which
+        is the classic way a colour-coded control set starts lying.
+        """
+        looks = modes.all_appearances(self.pipeline.current_zone)
+        for key, button in getattr(self, "mode_buttons", {}).items():
+            try:
+                button.configure(**looks[key])
+            except Exception:
+                pass
+
     def change_zone(self, zone):
         result = self.pipeline.change_zone(zone)
         self._append_output(result)
+        self._refresh_mode_buttons()
         self.status_label.configure(text=self.pipeline.get_status())
 
     def show_help(self):

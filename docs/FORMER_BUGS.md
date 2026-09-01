@@ -109,7 +109,99 @@ numbers, money and abbreviations expanded, with inline code held atomic.
 
 ---
 
+## FB-005 — Thirteen controls were never drawn, including the transcript
+
+**Status:** fixed, guarded · **Found:** 2026-09-01 · **Severity:** blocking
+
+**What the owner saw.** A console that worked, mostly. What he could not
+see is that the entire bottom row (all three Mode buttons, /status,
+/lexicon, /help, Clear), the context-source row (Web, OneDrive, Upload),
+two toolbar buttons and **the transcript box itself** were not being
+rendered at all.
+
+**What was actually wrong.** FB-001 was closed on the wrong measurement.
+The window fits the screen — 999×486 inside 1097×617, verified and
+tested. Nobody checked that the *content* fits the *window*.
+CustomTkinter multiplies every widget by the display scaling of 1.75, so
+the chrome needed **919px of the 486 available**. Tk's packer does not
+raise; it silently stops mapping children once it runs out of room, in
+reverse order of packing.
+
+**Verified as pre-existing**, not introduced by the accessibility work:
+commit `807c5ba` hides 9 controls under the same probe.
+
+**Guard.**
+- `strata_tools/layout.py` chooses a widget scaling from the real screen
+  and gives the transcript a floor rather than the leftovers.
+- The redundant title banner is gone and status moved into the row
+  below — one fewer stacked row, which is the shop design law (≤5 major
+  choices) doing real work.
+- `tools/layout_probe.py` counts controls Tk actually mapped, **from
+  inside a live mainloop** — measuring an unmapped window reports
+  nonsense and passes.
+- `tests/test_layout.py` asserts the defect configuration (1.75 in a
+  486px window) reports `content_fits == False`.
+
+**The lesson, which is the reusable part:** *verifying the wrong level
+passes.* FB-001's test was true and irrelevant.
+
+---
+
+## FB-006 — Every button was unreachable by keyboard
+
+**Status:** fixed, guarded · **Found:** 2026-09-01 · **Severity:** blocking
+
+**What the owner saw.** Nothing — this is invisible unless you try to
+drive the console without a mouse.
+
+**What was actually wrong.** The real Tab ring contained **two** widgets
+out of twenty-two. CustomTkinter builds each control from a `Canvas`
+plus a `Label`; a Tk `Canvas` is not in the default traversal order and
+a `Label` carries `takefocus=0`, so the whole widget family drops out of
+the focus ring. A library default, and it costs WCAG 2.1.1 Keyboard —
+**Level A**, the floor.
+
+The transcript was a second case: held `state="disabled"` so it cannot
+be typed into, which also drops it out of the ring entirely. Right for
+an input, wrong for a reading surface.
+
+**Guard.** `strata_tools/keyboard.py` + 20 tests; `tools/a11y_check.py`
+walks the real ring and now reports 24 reachable widgets. The focus ring
+colour is re-measured against every surface in the test suite.
+
+---
+
 ## Near-misses — caught before shipping, recorded because the reasoning is the value
+
+### NM-005 — A default argument sent the probes at the live database
+
+`StrataDB.__init__(self, path=DB_PATH)` binds the module constant when
+the class is **defined**, so the accessibility probes' `strata_console.DB_PATH
+= tmp` was silently ignored and they wrote to the real store — pressing
+A+ against it and changing a saved font size. Caught by noticing the
+audit reported 36pt on a supposedly fresh database. The live install was
+untouched (the probes ran from the worktree); the worktree's own copy was
+restored. Fixed by resolving `DB_PATH` at call time, with a regression
+test. The unit tests were never affected — they pass `path=` explicitly.
+
+### NM-006 — Two coordinate systems in one window calculation
+
+An attempt to reclaim screen height with `SPI_GETWORKAREA` produced a
+700px window on a 617px screen. That API answers in **physical** pixels,
+and CustomTkinter enables DPI awareness during init, so a work-area query
+made after `ctk.CTk()` reported 1032px of height while `winfo_screenheight()`
+still said 617. Reverted; `work_area()` is kept for diagnostics with the
+trap written into its docstring. Related: two *scaling* factors exist as
+well (widget and window), and the widget decision must be applied before
+the window scaling is read.
+
+### NM-007 — A focus ring invisible on the buttons it was drawn for
+
+The first focus-ring colour was an amber that looked right on the dark
+chrome and measured **2.81:1 against the button blue** — under the 3:1
+that WCAG 1.4.11 requires. Caught by measuring rather than looking.
+White clears every surface at worst 4.83:1. The rejected colour is kept
+in a test, so a future "tidy this to a brand colour" shows its cost.
 
 ### NM-001 — Clear would have cleared only the window
 
@@ -161,3 +253,12 @@ it cannot pass by scanning nothing.
    `sys.executable`.
 5. **Measure on the owner's machine before trusting a module's contract.**
 6. **A check that cannot fail is not a check.**
+7. **Verify the right LEVEL.** "The window fits the screen" was true
+   while half the application was undrawn. Ask what the next enclosing
+   thing is, and check that too.
+8. **Measure from inside a live mainloop.** A Tk window that has never
+   run an event loop reports unmapped children and heights of 1, so an
+   audit run against it passes while seeing nothing.
+9. **Colour is never the only cue** (WCAG 1.4.1), and **a claim in the
+   repository has to survive checking** — including a comment about
+   what research says.
