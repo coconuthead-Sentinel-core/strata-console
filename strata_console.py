@@ -19,7 +19,7 @@ import tkinter.font as tkfont
 import customtkinter as ctk
 from datetime import datetime
 
-from strata_tools import dictation, session, window_fit
+from strata_tools import dictation, session, speech, window_fit
 
 # Dyslexia-friendly reading fonts, best-first (ported from Sentinel Forge).
 # OpenDyslexic / Atkinson Hyperlegible are purpose-built for readability;
@@ -1052,6 +1052,17 @@ class StrataConsole:
         if not text:
             self._append_output("🔊 Nothing to read yet — send a message "
                                 "first.")
+            return
+        # The model answers in markdown. Handed to SAPI as-is it says
+        # "asterisk asterisk important asterisk asterisk" and recites
+        # code blocks character by character, so strip the markup and
+        # spell out numbers, money and abbreviations first. Applied only
+        # to the string given to the engine — the on-screen text is
+        # untouched.
+        text = speech.speakable(text)
+        if not text.strip():
+            self._append_output("🔊 That reply had nothing sayable in "
+                                "it — no words outside the markup.")
             return
         import os
         import subprocess
