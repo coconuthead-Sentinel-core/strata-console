@@ -20,7 +20,7 @@ accessibility work of 2026-09-01/02:
   * text resize             one CSS variable instead of walking widgets
   * nothing silently hidden CSS overflows and scrolls; it never stops
                             drawing a control the way Tk's packer does
-  * reading width           ``max-width: 65ch``, the thing measured at 53
+  * reading width           ``max-width: 68ch``, the thing measured at 53
                             characters and left unfixed in the Tk shell
   * markdown                rendered, rather than stripped before speech
 
@@ -30,7 +30,6 @@ same prompts, same answers — this is about whether they can be read.
 Run it:  py -3 strata_web.py
 """
 
-import json
 import os
 import threading
 
