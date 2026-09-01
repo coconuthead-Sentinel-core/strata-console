@@ -19,7 +19,7 @@ import tkinter.font as tkfont
 import customtkinter as ctk
 from datetime import datetime
 
-from strata_tools import session
+from strata_tools import session, window_fit
 
 # Dyslexia-friendly reading fonts, best-first (ported from Sentinel Forge).
 # OpenDyslexic / Atkinson Hyperlegible are purpose-built for readability;
@@ -508,20 +508,20 @@ class StrataConsole:
         self.root = ctk.CTk()
         self.root.title("Strata Console — local-first NLP inference pipeline")
 
-        # CustomTkinter multiplies the geometry we pass by the display scaling factor.
-        # Compute the size in *actual* pixels (capped to the screen), then divide it
-        # back out so the real window fits — keeping the bottom controls on-screen.
+        # CustomTkinter multiplies the geometry we pass by the display
+        # scaling factor. The rule that compensates for it now lives in
+        # strata_tools/window_fit.py with tests — same arithmetic as
+        # before, but graded headlessly instead of trusted inline.
         self.root.update_idletasks()
         try:
             scaling = ctk.ScalingTracker.get_window_scaling(self.root)
         except Exception:
             scaling = 1.0
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
-        want_w = min(1000, sw - 80)      # actual px we want, capped to screen
-        want_h = min(700, sh - 130)      # leave room for the taskbar
-        self.root.geometry(f"{int(want_w / scaling)}x{int(want_h / scaling)}+30+20")
-        self.root.minsize(int(640 / scaling), int(460 / scaling))
+        geometry, min_w, min_h = window_fit.plan_geometry(
+            self.root.winfo_screenwidth(),
+            self.root.winfo_screenheight(), scaling)
+        self.root.geometry(geometry)
+        self.root.minsize(min_w, min_h)
 
         self._setup_accessibility()
         self._create_widgets()
