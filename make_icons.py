@@ -1,4 +1,15 @@
-"""Generate two bright, distinct desktop icons for Quantum Nexus Forge + Turbo."""
+"""Generate the distinct desktop icons for this project.
+
+Distinct is the point, not decoration. There are now two shells over one
+engine and their shortcuts sit next to each other on the desktop; two
+near-identical tiles differing only by a word in the filename is a poor
+way to tell them apart, especially for a reader who has to parse the
+label rather than recognise the shape. So the shells differ by COLOUR
+and by GLYPH as well as by name -- the same rule the mode buttons follow.
+
+Running this rewrites EVERY icon it defines. To add or refresh one
+without disturbing the others, import make() and call it for that file.
+"""
 import os
 from PIL import Image, ImageDraw, ImageFont
 
@@ -21,6 +32,22 @@ def centered(draw, box, text, fnt, fill):
     draw.text((x0 + (x1 - x0 - w) / 2 - l, y0 + (y1 - y0 - h) / 2 - t), text, font=fnt, fill=fill)
 
 
+def fit(draw, text, box_w, start=40, floor=18):
+    """Largest label font that fits inside the tile. Pure enough.
+
+    A fixed size clipped "STRATA WEB" to "TRATA WE" -- a label that runs
+    off its own tile is worse than a smaller one, and an icon is exactly
+    the place where nobody notices the difference until they are looking
+    for the right shortcut.
+    """
+    for size in range(start, floor - 1, -2):
+        f = font(size)
+        l, _t, r, _b = draw.textbbox((0, 0), text, font=f)
+        if (r - l) <= box_w:
+            return f
+    return font(floor)
+
+
 def make(path, bg, accent, top, bottom):
     S = 256
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
@@ -28,7 +55,8 @@ def make(path, bg, accent, top, bottom):
     # rounded tile
     d.rounded_rectangle([8, 8, S - 8, S - 8], radius=46, fill=bg, outline=accent, width=8)
     centered(d, (0, 28, S, 168), top, font(150), accent)        # big glyph/letter
-    centered(d, (0, 170, S, 236), bottom, font(40), (255, 255, 255, 255))  # label
+    centered(d, (0, 170, S, 236), bottom, fit(d, bottom, S - 48),
+             (255, 255, 255, 255))                              # label
     sizes = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]
     img.save(path, sizes=sizes)
     print("wrote", path)
@@ -38,3 +66,9 @@ def make(path, bg, accent, top, bottom):
 make(os.path.join(HERE, "qnf_icon.ico"), (30, 16, 54, 255), (0, 229, 255, 255), "⚡", "NEXUS FORGE")
 # Turbo — black tile, lime-green accent
 make(os.path.join(HERE, "turbo_icon.ico"), (12, 12, 12, 255), (124, 252, 0, 255), "T", "TURBO")
+# Strata web shell — the console's own dark ground (#12161A) and a
+# lightened steel blue, both traceable to strata_tools/theme.py, so the
+# icon and the window it opens are recognisably the same thing. Reads as
+# a sibling of the desktop shell rather than a different application.
+make(os.path.join(HERE, "strata_web_icon.ico"), (18, 22, 26, 255),
+     (95, 165, 214, 255), "W", "STRATA WEB")
