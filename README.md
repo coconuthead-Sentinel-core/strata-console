@@ -102,12 +102,46 @@ cd strata-console
 #    voice and file features enable themselves when their libs exist)
 py -3 -m pip install customtkinter ollama faster-whisper sounddevice python-docx pypdf openpyxl beautifulsoup4
 
+# 2b. Optional — only for the web shell (uses the Edge WebView2 runtime
+#     Windows already ships; no browser or server is installed)
+py -3 -m pip install pywebview
+
 # 3. The local model (one-time)
 ollama pull llama3.2:3b
 
 # 4. Run it
 py -3 strata_console.py
 ```
+
+### Two shells, one engine
+
+`strata_core.py` is the engine — SQLite store, the five pipeline stages,
+the model client — and it imports no user-interface library at all. Two
+shells sit on top of it:
+
+| | Launch | What it is |
+| --- | --- | --- |
+| **Desktop** (default) | `launch_strata.vbs` | CustomTkinter. The shipped, tested one. |
+| **Web** | `launch_strata_web.vbs` | HTML/CSS/JS in a native WebView2 window via pywebview. |
+
+Both use the **same database, modes, voice path and Ollama daemon**.
+Neither is a rewrite of the other; the web shell exists to be compared
+against, and the desktop shell is unchanged.
+
+The web shell is still local-first: no port is opened and no server runs
+— pywebview loads the page from disk and bridges to Python in-process.
+Microphone capture and Whisper transcription stay in Python, because the
+interpreter rule and the RAM budget (FB-002) were expensive to learn and
+there is nothing to gain by re-learning them in JavaScript.
+
+What HTML gave for free that the desktop shell needed written by hand:
+keyboard operation, a visible focus indicator, whole-interface text
+resize, content that scrolls rather than silently not being drawn, and a
+68-character reading column — the measurement the desktop shell reports
+at ~53 characters and cannot fix without shrinking the font.
+
+What it does **not** do is change the assistant. Same model, same
+prompts, same answers.
 
 Or double-click `launch_strata.vbs` for a no-console launch. It resolves
 a real `pythonw.exe` by full path (so the Store alias, which does not
