@@ -1,5 +1,10 @@
 ' Strata Console - silent launcher (no console window at all)
 '
+' Launches strata_web.py, which since 2026-09-01 is the only shell.
+' The CustomTkinter console was retired; this launcher kept its name
+' and its path deliberately, because the desktop and Start-menu
+' shortcuts point at THIS file and renaming it would orphan both.
+'
 ' Picks the interpreter that can run the WHOLE app, voice included.
 '
 ' History, so this is not "fixed" back into a defect: the launcher used
@@ -21,7 +26,7 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 q = Chr(34)
 
 appDir = fso.GetParentFolderName(WScript.ScriptFullName)
-script = appDir & "\strata_console.py"
+script = appDir & "\strata_web.py"
 
 ' ---- Collect candidate pythonw.exe paths, in preference order ---------
 Dim cand(20), nCand

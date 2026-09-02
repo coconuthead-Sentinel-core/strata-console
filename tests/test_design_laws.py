@@ -131,9 +131,11 @@ class RepositoryGateTests(unittest.TestCase):
                 offences.extend(
                     format_findings(os.path.relpath(path, ROOT), findings))
         self.assertGreater(scanned, 5, "the walker found almost nothing")
-        # Guard the guard: if the walker ever stops reaching the console
-        # itself, this gate would pass while checking nothing.
-        self.assertIn("strata_console.py",
+        # Guard the guard: if the walker ever stops reaching the shell
+        # itself, this gate would pass while checking nothing. Followed
+        # strata_console.py into retirement -- strata_web.py is the
+        # shell now, and it is what must always be scanned.
+        self.assertIn("strata_web.py",
                       [os.path.basename(p) for p in self.python_files()])
         self.assertEqual(offences, [], "\n" + "\n".join(offences))
 

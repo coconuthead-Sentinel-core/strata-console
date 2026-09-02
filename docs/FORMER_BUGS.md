@@ -9,6 +9,22 @@ already in hand but unrecorded.
 
 Format: what the owner saw · what was actually wrong · the guard.
 
+> **On the Tk-era entries (2026-09-01).** The CustomTkinter shell was
+> retired; FB-001, FB-005, FB-006 and NM-002 describe a toolkit this
+> project no longer ships, and their guards (`window_fit.py`,
+> `layout.py`, the CustomTkinter probes under `tools/`) went with it.
+>
+> They are **kept in full and not struck through.** Three reasons. The
+> reasoning outlived the toolkit — "verify the right LEVEL" was learned
+> from a window that fit a screen while half the application was
+> undrawn, and that mistake is available in any UI. They are the
+> evidence for retiring Tk at all: three defects of one class is the
+> argument. And a register that deletes what is no longer convenient is
+> not a register.
+>
+> What is *not* claimed: that those guards still run. They do not. The
+> standing laws below are the part that carries forward.
+
 ---
 
 ## FB-001 — The window sized itself off the bottom of the screen

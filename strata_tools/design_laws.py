@@ -10,6 +10,17 @@ no linter, because it reads as proof.
 Each rule is here because it has already cost this shop a defect. None
 is a style preference.
 
+**Rules A and B after the Tk retirement (2026-09-01).** Strata's shell
+is HTML in a WebView2 window now; the CustomTkinter console is gone,
+and with it every line these two rules were written to catch. They are
+deliberately KEPT rather than deleted, for two honest reasons: the
+dormant ``turbo_console.py`` in this folder is still CustomTkinter and
+still scanned, and if a Tk widget ever returns the tripwire should
+already be in place rather than needing to be remembered. What must not
+happen is either rule being read as ongoing proof that the shipped
+shell is safe -- the shell contains no Tk at all, so they say nothing
+about it either way. Rule C is the one that still guards live code.
+
   **A  Tuple padding in a widget CONSTRUCTOR.**
      ``pady=(12, 4)`` is valid in ``.pack()`` and ``.grid()`` and raises
      ``bad screen distance`` inside a widget constructor. Sentinel

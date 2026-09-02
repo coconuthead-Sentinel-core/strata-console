@@ -10,8 +10,15 @@
 # that is what took dictation down. Check with:
 #     cscript //nologo launch_strata.vbs /which
 
-# --- required: the desktop shell -----------------------------------------
-customtkinter>=5.2
+# --- required: the shell --------------------------------------------------
+# HTML/CSS/JS in a native window. pywebview drives Edge WebView2, which
+# Windows already ships -- no browser is installed and no port is opened.
+pywebview>=5.0
+
+# customtkinter is NO LONGER required. The CustomTkinter console was
+# retired on 2026-09-01 and the web shell is the only shell. The package
+# can be uninstalled unless the dormant turbo_console.py is wanted, which
+# is the one remaining file in this folder that still imports it.
 
 # --- optional: the local model (template mode without it) -----------------
 ollama>=0.3

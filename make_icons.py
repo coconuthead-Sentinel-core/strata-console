@@ -1,11 +1,18 @@
 """Generate the distinct desktop icons for this project.
 
-Distinct is the point, not decoration. There are now two shells over one
-engine and their shortcuts sit next to each other on the desktop; two
-near-identical tiles differing only by a word in the filename is a poor
-way to tell them apart, especially for a reader who has to parse the
-label rather than recognise the shape. So the shells differ by COLOUR
-and by GLYPH as well as by name -- the same rule the mode buttons follow.
+Distinct is the point, not decoration. Several projects live side by
+side in this folder and their shortcuts sit next to each other on the
+desktop; near-identical tiles differing only by a word in the filename
+is a poor way to tell them apart, especially for a reader who has to
+parse the label rather than recognise the shape. So they differ by
+COLOUR and by GLYPH as well as by name -- the mode buttons' rule.
+
+Strata needed a PAIR of icons while it ran two shells. It does not any
+more: the CustomTkinter console was retired on 2026-09-01 and there is
+one Strata icon, ``strata_start_desktop.ico``. The web-shell tile and
+its gold wordmark were deleted with the shell they pointed at, because
+an icon for an application that no longer exists is worse than no icon
+-- it is a shortcut that opens nothing.
 
 Running this rewrites EVERY icon it defines. To add or refresh one
 without disturbing the others, import make() and call it for that file.
@@ -90,23 +97,9 @@ def make_wordmark(path, bg, fg, word):
 make(os.path.join(HERE, "qnf_icon.ico"), (30, 16, 54, 255), (0, 229, 255, 255), "⚡", "NEXUS FORGE")
 # Turbo — black tile, lime-green accent
 make(os.path.join(HERE, "turbo_icon.ico"), (12, 12, 12, 255), (124, 252, 0, 255), "T", "TURBO")
-# Strata web shell — the console's own dark ground (#12161A) and a
-# lightened steel blue, both traceable to strata_tools/theme.py, so the
-# icon and the window it opens are recognisably the same thing. Reads as
-# a sibling of the desktop shell rather than a different application.
-make(os.path.join(HERE, "strata_web_icon.ico"), (18, 22, 26, 255),
-     (95, 165, 214, 255), "W", "STRATA WEB")
-
-# Start-menu wordmarks. Both black; the LETTERING is what separates them,
-# because in the Start menu's alphabetical list the two entries sit
-# directly on top of each other under S and the name alone is a slow way
-# to tell them apart.
-#   white -> the desktop console (the original)
-#   gold  -> the web shell
-# Colour is the fast cue, not the only one: the shortcut names still say
-# which is which, so the pair does not depend on distinguishing white
-# from gold at 32 pixels.
+# Strata — the one Start-menu wordmark. Black tile, white lettering.
+# There was a second, gold one while a second shell existed; it went
+# with that shell. Both shortcuts that matter -- desktop and Start menu
+# -- point at launch_strata.vbs and wear this file.
 make_wordmark(os.path.join(HERE, "strata_start_desktop.ico"),
               (0, 0, 0, 255), (255, 255, 255, 255), "STRATA")
-make_wordmark(os.path.join(HERE, "strata_start_web.ico"),
-              (0, 0, 0, 255), (212, 175, 55, 255), "STRATA")

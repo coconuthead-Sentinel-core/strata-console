@@ -13,7 +13,7 @@
 ## What it is
 
 Strata Console is an applied systems-engineering project: a five-stage
-inference pipeline with a desktop shell, built to demonstrate how a
+inference pipeline with a native desktop window, built to demonstrate how a
 small local model becomes genuinely useful when the *application layer*
 does the heavy lifting — routing, context management, retrieval, and
 honest fallbacks.
@@ -89,13 +89,16 @@ answers "Requirement already satisfied", and changes nothing.
   - 📎 **Upload document** — attach any readable file; the console
     retrieves the passages relevant to each question.
 
-  All three are available in **both shells**, and all three persist:
-  an attached file and a ticked box stay in force for the rest of the
-  conversation, so the material can be discussed over many turns rather
-  than consulted once. The rule deciding what gets handed to the model
-  lives in `strata_tools/context_sources.py` — one tested kernel, not a
-  copy per shell. In the web shell each answer carries a `Read:` line
-  naming the sources actually consulted.
+  All three persist: an attached file and a ticked box stay in force
+  for the rest of the conversation, so the material can be discussed
+  over many turns rather than consulted once. The rule deciding what
+  gets handed to the model lives in `strata_tools/context_sources.py`
+  as a tested kernel rather than inside the shell. Each answer carries
+  a `Read:` line naming the sources actually consulted.
+- **Slash commands** — `/status`, `/lexicon`, `/mode green|yellow|red`,
+  `/clear`, `/help`; `/zone` and `/new` still accepted. The grammar is
+  a kernel too (`strata_tools/commands.py`), so an unknown command is
+  reported rather than quietly answered by the model.
 - **Graceful degradation** — if Ollama or the model is missing, the
   deterministic template engine answers and the UI says so honestly.
 
@@ -106,73 +109,72 @@ answers "Requirement already satisfied", and changes nothing.
 git clone https://github.com/coconuthead-Sentinel-core/strata-console.git
 cd strata-console
 
-# 2. Dependencies (the console runs on the stdlib + customtkinter;
-#    voice and file features enable themselves when their libs exist)
-py -3 -m pip install customtkinter ollama faster-whisper sounddevice python-docx pypdf openpyxl beautifulsoup4
-
-# 2b. Optional — only for the web shell (uses the Edge WebView2 runtime
-#     Windows already ships; no browser or server is installed)
+# 2. The shell (Edge WebView2 is already on Windows; no browser or
+#    server is installed, and no port is opened)
 py -3 -m pip install pywebview
 
-# 3. The local model (one-time)
+# 3. Optional — voice and file features enable themselves when present
+py -3 -m pip install ollama faster-whisper sounddevice python-docx pypdf openpyxl beautifulsoup4
+
+# 4. The local model (one-time)
 ollama pull llama3.2:3b
 
-# 4. Run it
-py -3 strata_console.py
+# 5. Run it
+py -3 strata_web.py
 ```
 
-### Two shells, one engine
+### One shell over one engine
 
 `strata_core.py` is the engine — SQLite store, the five pipeline stages,
-the model client — and it imports no user-interface library at all. Two
-shells sit on top of it:
+the model client — and it imports no user-interface library at all. One
+shell sits on top of it:
 
 | | Launch | What it is |
 | --- | --- | --- |
-| **Desktop** (default) | `launch_strata.vbs` — desktop icon **Strata Console** (violet tile, ⚡) | CustomTkinter. The shipped, tested one. |
-| **Web** | `launch_strata_web.vbs` — desktop icon **Strata Console (Web)** (dark tile, blue **W**) | HTML/CSS/JS in a native WebView2 window via pywebview. Adds read-along highlighting, and reports which sources each answer read. |
-
-The two icons differ by colour and glyph, not only by name: they sit side
-by side on the desktop, and telling them apart should not require reading
-the label. `make_icons.py` generates them.
-
-Both also appear in the **Start menu** under **S**, with wordmark icons
-that differ by lettering colour — **white** for the desktop console,
-**gold** for the web shell — because in an alphabetical list the two
-names sit directly on top of each other and reading the label is the
-slow way to tell them apart.
+| **Strata Console** | `launch_strata.vbs` — desktop and Start-menu icon **Strata Console** | HTML/CSS/JS in a native WebView2 window via pywebview. |
 
 Start-menu shortcuts live in
 `%APPDATA%\Microsoft\Windows\Start Menu\Programs`.
 
-> Renaming or moving a launcher orphans its shortcut. Each `.vbs` now has
-> **two** shortcuts pointing at it — one on the desktop, one in the Start
-> menu — so if a launcher moves, repoint both.
+> Renaming or moving a launcher orphans its shortcut. `launch_strata.vbs`
+> has **two** shortcuts pointing at it — one on the desktop, one in the
+> Start menu — so if it moves, repoint both. This is why the file kept
+> its name when the shell behind it was replaced.
 
-Both use the **same database, modes, voice path, context sources and
-Ollama daemon**. Neither is a rewrite of the other; the web shell
-exists to be compared against.
+#### Why the CustomTkinter console was retired (2026-09-01)
 
-As of 1.5.0 the comparison is fair: the web shell has the same three
-context sources as the desktop one. What made that safe was moving the
-rule into `strata_tools/context_sources.py` rather than copying it —
-duplicating logic across shells is how "two shells, one engine" stops
-being true, one edit at a time.
+The project ran two interchangeable shells for a day so they could be
+compared on the owner's real screen. The comparison ended: the HTML shell
+won, and carrying a second one was paying maintenance twice for a
+competition already decided.
 
-The web shell is still local-first: no port is opened and no server runs
-— pywebview loads the page from disk and bridges to Python in-process.
+What HTML gave for free that the Tk console needed written by hand:
+keyboard operation, a visible focus indicator, whole-interface text
+resize, content that scrolls rather than silently not being drawn, and a
+68-character reading column — the measurement the Tk console reported at
+~53 characters and could not fix without shrinking the font. Three of the
+project's recorded defects (FB-001, FB-005, FB-006) exist because a Tk
+widget was drawn off-screen or unreachable; CSS does not have that
+failure mode.
+
+Retirement was gated on **parity, not preference**. The Tk console
+understood slash commands and could show the operator token lexicon; the
+web shell could not. Those were ported and tested first
+(`strata_tools/commands.py`), and only then was the console removed. What
+went with it: `strata_console.py`, the Tk-only kernels
+(`layout.py`, `window_fit.py`, `selection.py`), their tests, and the five
+CustomTkinter measuring tools under `tools/`. Nothing is lost — it is all
+in the history at tag-worthy commit depth, and `git log -- strata_console.py`
+still reads.
+
+The shell is local-first: no port is opened and no server runs —
+pywebview loads the page from disk and bridges to Python in-process.
 Microphone capture and Whisper transcription stay in Python, because the
 interpreter rule and the RAM budget (FB-002) were expensive to learn and
 there is nothing to gain by re-learning them in JavaScript.
 
-What HTML gave for free that the desktop shell needed written by hand:
-keyboard operation, a visible focus indicator, whole-interface text
-resize, content that scrolls rather than silently not being drawn, and a
-68-character reading column — the measurement the desktop shell reports
-at ~53 characters and cannot fix without shrinking the font.
-
-What it does **not** do is change the assistant. Same model, same
-prompts, same answers.
+What the change does **not** do is alter the assistant. Same model, same
+prompts, same answers, same database.
 
 Or double-click `launch_strata.vbs` for a no-console launch. It resolves
 a real `pythonw.exe` by full path (so the Store alias, which does not

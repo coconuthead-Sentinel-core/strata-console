@@ -10,6 +10,63 @@ root cause and the guard.
 
 ---
 
+## [2.0.0] — 2026-09-01
+
+Major, because a whole front end was removed. Nothing the owner can do
+was removed with it — see **Parity first**, below.
+
+### Added
+- **Slash commands in the web shell**: `/status`, `/lexicon`,
+  `/mode green|yellow|red`, `/clear`, `/help`, with `/zone` and `/new`
+  still accepted. Grammar and formatting live in
+  `strata_tools/commands.py` as a pure kernel; executing a command
+  touches the pipeline, so that stays in the bridge.
+- **The operator token lexicon is reachable again** (`/lexicon`).
+  `bootstrap()` had been shipping `ALL_GLYPHS` to the page since the web
+  shell was written, and `app.js` never read them.
+
+### Removed
+- **`strata_console.py` — the CustomTkinter shell.** Retired at the
+  owner's instruction. The two shells ran side by side so they could be
+  compared on his real screen; the comparison concluded, and carrying
+  the loser meant paying maintenance twice.
+- Tk-only kernels: `strata_tools/layout.py`, `window_fit.py`,
+  `selection.py`, and their tests.
+- The five CustomTkinter measuring tools: `tools/dpi_check.py`,
+  `fit_sweep.py`, `layout_probe.py`, `scaling_probe.py`,
+  `_one_scaling.py`, plus `a11y_check.py`, which audited the Tk widget
+  tree.
+- `launch_strata_web.vbs`. **`launch_strata.vbs` now launches the web
+  shell** and deliberately kept its name: the desktop and Start-menu
+  shortcuts point at that path, and renaming it would orphan both.
+- `customtkinter` from required dependencies.
+
+### Parity first
+Retirement was gated on capability, not preference. The Tk console could
+do two things the web shell could not — slash commands and the lexicon —
+and **both were ported and tested before it was deleted**, in a separate
+commit, so the removal could not quietly take a feature with it.
+
+### Changed
+- Design-law **rules A and B are kept but re-scoped**. Neither can fire
+  on the shipped shell any more, and this linter's own docstring says a
+  rule that cannot fire is worse than none because it reads as proof.
+  They stay as a tripwire for the dormant `turbo_console.py` and for any
+  future return of Tk; `design_laws.py` now states that plainly.
+- `test_session.py`'s "the shell does not shadow DB_PATH" check follows
+  the shell rather than the filename — it now asserts against
+  `strata_web`. The rule was never about `strata_console.py`.
+- The design-law repository gate's "guard the guard" assertion now
+  requires `strata_web.py` in the scanned set.
+
+### Notes
+- Suite: 294 tests green. The count fell from 333 because 39 tests went
+  with the Tk code they existed to test — a smaller suite covering the
+  same shipped surface, not less coverage.
+- Three recorded defects (FB-001, FB-005, FB-006) were widgets drawn
+  off-screen or unreachable by keyboard. That failure mode leaves with
+  the toolkit.
+
 ## [1.5.0] — 2026-09-02
 
 ### Added

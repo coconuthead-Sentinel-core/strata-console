@@ -75,10 +75,12 @@
 - **Horizon: 5-10 years** as a daily-use tool, single owner, maintained
   by owner + AI assistant.
 - **Stack chosen for that horizon**: CPython + SQLite, with Ollama as a
-  replaceable model backend, and **two interchangeable shells** over one
-  engine (`strata_core.py`): CustomTkinter, and HTML/CSS in a WebView2
-  window. The engine imports neither, which is what makes replacing a
-  front end cheap instead of existential.
+  replaceable model backend, and **one shell** over one engine
+  (`strata_core.py`): HTML/CSS/JS in a WebView2 window. The engine
+  imports no UI library, which is what made replacing the front end
+  cheap instead of existential — and that claim is no longer
+  theoretical: a shell was swapped out on 2026-09-01 and the engine did
+  not change.
 - **Documented runtime**: Python 3.13 on this laptop, targeting 3.11+.
   The interpreter rule is enforced by `strata_tools/interpreter.py` and
   `launch_strata.vbs`, because two Python installs on one machine is the
@@ -91,9 +93,9 @@
 
 | Risk | Seam / mitigation |
 | --- | --- |
-| `strata_console.py` is a single ~1,300-line file mixing pipeline, DB, and Tk shell. | Small today. The seam is the `StrataDB` / pipeline-node boundary — each node lifts into `strata_tools/` on the existing pattern. Named here while it is cheap; this is the trap that produced Sentinel's 28k-line shell. |
+| ~~`strata_console.py` is a single ~1,300-line file mixing pipeline, DB, and Tk shell.~~ | **Closed 2026-09-01** — the file is gone with the Tk shell. The habit it warned about is not: `strata_web.py` is the shell now and must not become the same thing. Every rule it needs goes to `strata_tools/` as a tested kernel first (`context_sources.py`, `commands.py` were both extracted this way, not written in place). |
 | Two Python interpreters on the laptop, only one carrying the voice packages. | Fixed and tested (`interpreter.py`), but the machine can drift again. `cscript //nologo launch_strata.vbs /which` is the check. |
-| CustomTkinter multiplies window geometry by display scaling (~1.75x here). | **Closed.** The compensation is now a tested kernel (`window_fit.py`), the invariant is swept in tests, and design-law rule B fails the build on a hardcoded size. DPI awareness was measured and declined — it would halve the window (NM-002). |
+| ~~CustomTkinter multiplies window geometry by display scaling (~1.75x here).~~ | **Closed permanently 2026-09-01** — the risk left with the toolkit. It cost this project FB-001, FB-005 and NM-002 before it was tamed, and the tested kernel that tamed it (`window_fit.py`) was retired alongside the shell it served. The WebView2 window sizes itself as a fraction of the screen and CSS reflows rather than refusing to draw. |
 | Whisper and Ollama compete for RAM on an 8 GB laptop. | Handled: `voice_budget.py` plans a tier against free RAM and stops rather than dying inside MKL. |
 
 ## 6. Change log for this scope
@@ -103,3 +105,5 @@
 | 2026-08-31 | Document drafted from shipped truth; personal-development features declared permanently out of scope. | Superseded by the row below. |
 | 2026-09-01 | Baselined. Seven completion gaps closed (see `docs/BUILD_PLAN.md`). Three acceptance criteria added: design-law gate, defect register, CI. | Owner instruction: complete the build. |
 | 2026-09-01 | DPI awareness declined on measurement; seven donor modules declined as design-changing. | Recorded in `docs/TRANSFER_CATALOG.md` and `docs/FORMER_BUGS.md` NM-002 — decisions, not oversights. |
+| 2026-09-01 | **Two shells → one.** The CustomTkinter console is retired; the HTML/CSS/JS shell is the only shell. §4 amended. | **Owner decision**, asked for directly: "get rid of the tkinter shell… that way there is only one." Gated on parity, not preference — slash commands and the operator token lexicon existed only in the Tk console and were ported and tested (`strata_tools/commands.py`) *before* it was removed. Carrying two front ends meant paying maintenance twice for a comparison that had already concluded. |
+| 2026-09-01 | CustomTkinter dropped from required dependencies; Tk-only kernels (`layout.py`, `window_fit.py`, `selection.py`) and the five CustomTkinter measuring tools removed with the shell they measured. | Consequence of the row above. Design-law rules A and B are **kept but re-scoped** — they can no longer fire on the shipped shell, so `design_laws.py` now says so plainly rather than letting them read as ongoing proof. |

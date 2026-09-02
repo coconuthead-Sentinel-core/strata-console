@@ -80,10 +80,10 @@ class DatabaseFloorTests(unittest.TestCase):
     """The floor as the console actually uses it -- on a temp DB."""
 
     def setUp(self):
-        import strata_console
+        import strata_core
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
-        self.db = strata_console.StrataDB(path=self.tmp.name)
+        self.db = strata_core.StrataDB(path=self.tmp.name)
 
     def tearDown(self):
         self.db.conn.close()
@@ -119,11 +119,11 @@ class DatabaseFloorTests(unittest.TestCase):
         self.assertEqual(self.db.archived_thread_count(), 2)
 
     def test_the_floor_survives_a_reopen(self):
-        import strata_console
+        import strata_core
         self.add(3)
         self.db.raise_memory_floor()
         self.db.conn.close()
-        reopened = strata_console.StrataDB(path=self.tmp.name)
+        reopened = strata_core.StrataDB(path=self.tmp.name)
         try:
             self.assertEqual(reopened.recent_threads(10), [])
             self.assertEqual(reopened.get_state(STATE_KEY), "3")
@@ -177,9 +177,11 @@ class DatabasePathBindingTests(unittest.TestCase):
     def test_the_shell_does_not_shadow_the_setting(self):
         # A re-exported DB_PATH in the shell would be a name tools could
         # set while StrataDB reads the core's copy -- NM-005 again.
-        import strata_console
-        self.assertFalse(hasattr(strata_console, "DB_PATH"),
-                         "strata_console must not define DB_PATH; the "
+        # Followed strata_console into retirement: the rule was never
+        # about that file, it is about whichever module is the shell.
+        import strata_web
+        self.assertFalse(hasattr(strata_web, "DB_PATH"),
+                         "strata_web must not define DB_PATH; the "
                          "engine owns it (see strata_core docstring)")
 
 
