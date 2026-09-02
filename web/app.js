@@ -347,6 +347,17 @@ async function send() {
   const pending = turn('Strata', '<p class="thinking">thinking…</p>');
   $('send').disabled = true;
 
+  /* Which sources this turn will use is decided in Python -- typing
+     "look this up" counts as ticking the box, and that rule lives in
+     strata_tools/context_sources.py so both shells obey one copy of
+     it. Asking costs one bridge call and saves a second rule here. */
+  try {
+    const b = await api.busy_for(text);
+    $('status').textContent = b.label;
+    const think = pending.querySelector('.thinking');
+    if (think) think.textContent = b.label;
+  } catch (e) { /* a missing label is cosmetic; the turn still runs */ }
+
   try {
     const r = await api.send(text);
     if (!r.ok) {
@@ -355,6 +366,15 @@ async function send() {
       return;
     }
     pending.querySelector('.body').innerHTML = markdown(r.reply);
+    /* Say what was actually read. Without this the owner cannot tell a
+       real search from the model answering out of its own head, which
+       is the difference between grounded and confident-and-wrong. */
+    if (r.used && r.used.length) {
+      const src = document.createElement('p');
+      src.className = 'used';
+      src.textContent = 'Read: ' + r.used.join(' · ');
+      pending.appendChild(src);
+    }
     lastReply = r.reply;
     lastSpeakable = r.speakable || r.reply;
     lastTurn = pending;
@@ -402,6 +422,53 @@ function grow(box) {
   box.style.height = Math.min(box.scrollHeight, window.innerHeight * 0.3) + 'px';
 }
 
+/* ---------- context sources -------------------------------------------- */
+
+/* Render whichever file is currently attached. The page is told the
+   name and the label only -- never the text, which can run to two
+   million characters and has no business crossing the bridge twice. */
+function showAttachment(att) {
+  const out = $('attached');
+  const off = $('detach');
+  if (att && att.label) {
+    out.textContent = att.label;
+    out.title = att.label;
+    off.hidden = false;
+  } else {
+    out.textContent = '';
+    out.title = '';
+    off.hidden = true;
+  }
+}
+
+async function upload() {
+  if (!api) return;
+  $('upload').disabled = true;
+  try {
+    const r = await api.upload_document();
+    if (r.cancelled) return;
+    if (!r.ok) { note(r.error, true); return; }
+    showAttachment(r.attachment);
+    note(r.message);
+  } catch (e) {
+    note('Upload failed: ' + e, true);
+  } finally {
+    $('upload').disabled = false;
+  }
+}
+
+/* Background work reports here. Two producers share the queue: the
+   voice-model release watch and OneDrive indexing. Before this loop
+   existed the bridge had a memory_note() method that no page called,
+   so the release watch was reporting to nobody. */
+async function pollNotes() {
+  if (!api) return;
+  try {
+    const r = await api.poll_notes();
+    (r.notes || []).forEach((n) => note(n));
+  } catch (e) { /* a dropped poll is not worth a message */ }
+}
+
 /* ---------- wiring ----------------------------------------------------- */
 
 function setZone(zone) {
@@ -421,6 +488,13 @@ async function boot() {
   setZone(s.zone);
   $('status').textContent = s.status;
 
+  /* Source state lives on the bridge, so a reload finds the boxes and
+     the attachment exactly as they were left. */
+  const src = s.sources || {};
+  $('src-web').checked = !!src.web;
+  $('src-onedrive').checked = !!src.onedrive;
+  showAttachment(s.attachment);
+
   turn('Strata', markdown(
     s.brain
       ? 'Web shell online — local model **' + s.model + '**.\n\n' +
@@ -428,7 +502,12 @@ async function boot() {
         'same voice path. Press **Speak** to dictate, or just type.\n\n' +
         'While an answer is read aloud, the sentence being spoken is ' +
         'highlighted so you can follow along. Click any sentence to hear ' +
-        'it again from there.'
+        'it again from there.\n\n' +
+        'Tick **🌐 Web search** or **☁ OneDrive files**, or press ' +
+        '**📎 Upload document**, and I will read those before answering ' +
+        '— and keep reading them for as long as they stay switched on, ' +
+        'so you can go on asking about the same material. Saying ' +
+        '"look this up" works without touching the box.'
       : 'Web shell online — **template mode**.\n\nThe local model is not ' +
         'answering: ' + s.error + '\n\nResponses use the deterministic ' +
         'engine until it is ready.'
@@ -457,6 +536,31 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   $('mic').addEventListener('click', toggleMic);
+
+  $('src-web').addEventListener('change', async (e) => {
+    if (!api) return;
+    await api.set_source('web', e.target.checked);
+    note(e.target.checked
+      ? '🌐 Web search ON — I will search before answering, and cite what I read.'
+      : '🌐 Web search off. Saying "look this up" still works for one message.');
+  });
+
+  $('src-onedrive').addEventListener('change', async (e) => {
+    if (!api) return;
+    /* Switching this on starts the index build; the note telling him
+       so arrives through pollNotes, not from here. */
+    await api.set_source('onedrive', e.target.checked);
+    if (!e.target.checked) note('☁ OneDrive files off — your documents stay indexed.');
+  });
+
+  $('upload').addEventListener('click', upload);
+
+  $('detach').addEventListener('click', async () => {
+    if (!api) return;
+    const r = await api.clear_attachment();
+    showAttachment(null);
+    if (r.message) note(r.message);
+  });
 
   $('read').addEventListener('click', () => {
     if (speaking) { stopReading(); return; }
@@ -522,6 +626,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (e.key === 'Escape' && speaking) { e.preventDefault(); stopReading(); }
   });
+
+  /* Five seconds: slow enough to cost nothing, fast enough that "☁
+     OneDrive ready" lands while he is still looking at the window. */
+  setInterval(pollNotes, 5000);
 
   window.addEventListener('pywebviewready', boot);
   if (window.pywebview && window.pywebview.api) boot();

@@ -10,6 +10,44 @@ root cause and the guard.
 
 ---
 
+## [1.5.0] — 2026-09-02
+
+### Added
+- **The three context sources reach the web shell**: 🌐 web search,
+  ☁ OneDrive files and 📎 upload, which until now only the desktop
+  shell had. Both stay switched on across turns, which is the point —
+  the material can be discussed over a whole conversation rather than
+  consulted once. Typing "look this up" still turns the web on for a
+  single message without touching the checkbox.
+- **Answers say what they read.** A `Read: 📎 lease.pdf · 🌐 web` line
+  under a reply reports which sources were actually consulted. Without
+  it there is no way to tell a grounded answer from the model answering
+  confidently out of its own head.
+- **`strata_tools/context_sources.py`** — the rule for what the model is
+  handed, lifted out of `strata_console.py` into a pure, headless-tested
+  kernel that both shells now call. 28 tests. It had been UI code no
+  test could reach, and copying it into the second shell would have
+  produced two rules that agreed until the first edit.
+
+### Fixed
+- **The web shell's note channel was never connected.** `Api` exposed
+  `memory_note()` and no page ever called it, so the voice-model release
+  watch — which does real work and frees ~221 MB — reported to nobody.
+  Replaced with `poll_notes()`, a drained queue the page polls every
+  five seconds, now shared with OneDrive indexing. A method the UI never
+  calls is the bridge equivalent of a button that does nothing.
+- **The web-search trigger phrases were never tested.** Eleven phrases
+  shipped inside the Tk shell with no coverage; a dead entry among them
+  would have been invisible. Each one is now asserted to fire.
+
+### Guarded
+- `tests/test_web_shell.py` imports the bridge and checks that **every**
+  `api.*` call in `app.js` resolves to a real method on `Api`. A method
+  indented one level wrong greps clean and fails at runtime as a
+  rejected promise, which the page shows as nothing happening.
+- The upload dialog's filter is asserted equal to `doc_index.SUPPORTED`,
+  so the dialog can never offer a format the extractor cannot open.
+
 ## [1.4.1] — 2026-09-02
 
 ### Added

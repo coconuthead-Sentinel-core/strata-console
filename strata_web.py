@@ -37,7 +37,7 @@ import time
 import webview
 
 from strata_core import ALL_GLYPHS, StrataPipeline
-from strata_tools import dictation, session, speech
+from strata_tools import context_sources, dictation, session, speech
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(HERE, "web", "index.html")
@@ -56,12 +56,26 @@ class Api:
     def __init__(self):
         self.pipeline = StrataPipeline()
         self._lock = threading.Lock()
+        # Set in main() once the window exists. The file dialog is the
+        # one thing here that must ask the native window rather than the
+        # page: a browser <input type=file> hands back a sandboxed blob
+        # with no path, and the indexer needs the real file.
+        self.window = None
+        # --- context sources -------------------------------------------
+        # State lives on the bridge, not in the page, so it survives a
+        # reload and so the rule deciding what the model reads stays in
+        # one testable place (strata_tools/context_sources.py).
+        self._sources = {"web": False, "onedrive": False}
+        self._attachment = None
+        self._onedrive_index = None      # None = never built / building
+        self._onedrive_building = False
+        self._notes = []
+        self._note_lock = threading.Lock()
         self._rec_stream = None
         self._rec_frames = []
         self._whisper_model = None
         self._whisper_tier = None
         self._whisper_used_at = None
-        self._release_note = ""
         # Same idle-release policy as the desktop shell, and for the same
         # measured reason: the model holds ~174 MB and releasing returns
         # ~221 MB on a machine that lives at 400-600 MB free. A timer
@@ -82,6 +96,8 @@ class Api:
             "fontSize": int(db.get_state("web_font_size", "17") or 17),
             "autoread": db.get_state("autoread", "0") == "1",
             "glyphs": [dict(g) for g in ALL_GLYPHS],
+            "sources": dict(self._sources),
+            "attachment": self._attachment_view(),
         }
 
     def set_pref(self, key, value):
@@ -91,15 +107,174 @@ class Api:
         self.pipeline.db.set_state(key, str(value))
         return {"ok": True}
 
+    # --- context sources: web, OneDrive, uploaded document ----------------
+    #
+    # The model never reaches any of these. The shell fetches text and
+    # hands it in as context, which is what keeps "local-first" true
+    # while still letting the assistant answer from the open web and
+    # from the owner's own documents.
+    #
+    # Both the attachment and the OneDrive index outlive the turn, on
+    # purpose: the point is to keep talking ABOUT the material, so a
+    # file uploaded once stays readable until it is removed.
+
+    def _push_note(self, text):
+        """Queue a line for the page to collect on its next poll."""
+        if not text:
+            return
+        with self._note_lock:
+            self._notes.append(text)
+
+    def _attachment_view(self):
+        """What the page is allowed to know about the upload: never the
+        text itself, which can be two million characters."""
+        att = self._attachment
+        if not att:
+            return None
+        return {"name": att["name"],
+                "label": context_sources.attachment_label(
+                    att["name"], len(att["text"]))}
+
+    def set_source(self, name, on):
+        """Turn 🌐 web search or ☁ OneDrive files on or off."""
+        if name not in self._sources:
+            return {"ok": False, "error": f"unknown source {name!r}"}
+        self._sources[name] = bool(on)
+        if name == "onedrive" and self._sources[name]:
+            self._ensure_onedrive_index()
+        return {"ok": True, "sources": dict(self._sources)}
+
+    def _ensure_onedrive_index(self):
+        """Build the index once, off the bridge thread.
+
+        Indexing a whole OneDrive takes minutes the first time and
+        seconds afterwards. It runs in the background and reports
+        through the note queue, because a bridge call that blocks for
+        four minutes is indistinguishable from a hung window.
+        """
+        if self._onedrive_index is not None or self._onedrive_building:
+            return
+        self._onedrive_building = True
+        self._push_note("☁ Indexing your OneDrive files — the first time "
+                        "can take a few minutes; after that it's cached.")
+
+        def work():
+            from strata_tools import doc_index
+            try:
+                cache = os.path.join(doc_index.cache_dir(),
+                                     "onedrive_index.json")
+                idx = doc_index.build_index_over(doc_index.onedrive_root(),
+                                                 cache)
+                self._onedrive_index = idx
+                note = f"☁ OneDrive ready — {len(idx)} files searchable."
+            except Exception as e:
+                # An empty list, not None: the difference between "found
+                # nothing" and "still working" is what the owner is told.
+                self._onedrive_index = []
+                note = f"☁ OneDrive indexing failed: {type(e).__name__}: {e}"
+            self._onedrive_building = False
+            self._push_note(note)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def upload_document(self):
+        """Open the native file dialog and attach what it returns.
+
+        The dialog is the window's, not the page's: an HTML file input
+        yields a sandboxed blob with no path, and every extractor in
+        ``doc_index`` reads from a path. Borrowing the native dialog is
+        cheaper and more honest than rebuilding the extractors in
+        JavaScript.
+        """
+        if self.window is None:
+            return {"ok": False,
+                    "error": "The window is not ready yet — try again in "
+                             "a moment."}
+        spec = ";".join("*" + e for e in context_sources.UPLOAD_EXTENSIONS)
+        try:
+            picked = self.window.create_file_dialog(
+                webview.OPEN_DIALOG, allow_multiple=False,
+                file_types=(f"Readable files ({spec})", "All files (*.*)"))
+        except Exception as e:
+            return {"ok": False,
+                    "error": f"Could not open the file dialog: "
+                             f"{type(e).__name__}: {e}"}
+        if not picked:
+            return {"ok": True, "cancelled": True}
+
+        path = picked[0] if isinstance(picked, (list, tuple)) else picked
+        from strata_tools.doc_index import extract_text
+        name = os.path.basename(path)
+        try:
+            text = extract_text(path) or ""
+        except Exception:
+            text = ""
+        if not text.strip():
+            return {"ok": False, "cancelled": False,
+                    "error": context_sources.unreadable_note(name)}
+
+        self._attachment = {
+            "name": name,
+            "text": text[:context_sources.MAX_ATTACHMENT_CHARS],
+        }
+        return {"ok": True,
+                "attachment": self._attachment_view(),
+                "message": context_sources.attachment_greeting(name)}
+
+    def clear_attachment(self):
+        if self._attachment is None:
+            return {"ok": True, "attachment": None, "message": ""}
+        self._attachment = None
+        return {"ok": True, "attachment": None,
+                "message": "📎 Attachment removed."}
+
+    def busy_for(self, text):
+        """The status line to show while this turn runs.
+
+        Asked of Python rather than decided in JavaScript so that the
+        rule for 'did this message ask for a search' exists exactly
+        once. A second copy in the page would answer differently the
+        first time either was edited.
+        """
+        use_web = context_sources.wants_web(text or "", self._sources["web"])
+        return {"ok": True,
+                "label": context_sources.busy_label(
+                    use_web, self._sources["onedrive"],
+                    self._attachment is not None)}
+
     # --- conversation -----------------------------------------------------
     def send(self, text):
         """Run one message through the engine. Blocking; called off the UI."""
         text = (text or "").strip()
         if not text:
             return {"ok": False, "error": "empty message"}
+
+        # Gather grounding text BEFORE the model runs. Typing "look this
+        # up" turns the web on for the turn without touching the box --
+        # a request that is understood but not acted on reads as the app
+        # ignoring him.
+        use_web = context_sources.wants_web(text, self._sources["web"])
+        use_onedrive = self._sources["onedrive"]
+        web_text = ""
+        if use_web:
+            from strata_tools.web_search import web_search_context
+            web_text = web_search_context(text)
+        extra = context_sources.gather(
+            text, attachment=self._attachment,
+            onedrive_index=self._onedrive_index,
+            use_onedrive=use_onedrive, web_text=web_text)
+
+        used = []
+        if self._attachment:
+            used.append("📎 " + self._attachment["name"])
+        if use_onedrive:
+            used.append("☁ OneDrive")
+        if use_web:
+            used.append("🌐 web")
+
         with self._lock:
             try:
-                out = self.pipeline.process_input(text)
+                out = self.pipeline.process_input(text, extra_context=extra)
             except Exception as e:
                 return {"ok": False,
                         "error": f"{type(e).__name__}: {e}"}
@@ -112,6 +287,9 @@ class Api:
             "closing": out.get("closing", ""),
             "status": self.pipeline.get_status(),
             "speakable": speech.speakable(reply),
+            # What was actually consulted, so the owner can see whether
+            # a search happened rather than inferring it from the wait.
+            "used": used,
         }
 
     def change_zone(self, zone):
@@ -184,7 +362,7 @@ class Api:
                         self._whisper_used_at = None
                         import gc
                         gc.collect()
-                        self._release_note = vb.release_reason(idle, free)
+                        self._push_note(vb.release_reason(idle, free))
             except Exception:
                 pass
             timer = threading.Timer(60.0, tick)
@@ -194,20 +372,26 @@ class Api:
         timer.daemon = True
         timer.start()
 
-    def memory_note(self):
-        """Anything the page should say about memory, then forget it.
+    def poll_notes(self):
+        """Everything the background work wants to tell the page, once.
 
-        Polled by the page rather than pushed, because a background
-        thread reaching into the DOM is a race and this is not urgent
-        enough to be worth one.
+        Polled rather than pushed, because a background thread reaching
+        into the DOM is a race and none of this is urgent enough to be
+        worth one. Two producers share the queue: the voice-model
+        release watch above, and OneDrive indexing.
+
+        This replaces ``memory_note``, which no page ever called -- the
+        release note it returned could not reach the owner, so the
+        memory watch was doing real work and reporting it to nobody.
         """
-        note, self._release_note = self._release_note, ""
+        with self._note_lock:
+            notes, self._notes = self._notes, []
         try:
             from strata_tools import voice_budget as vb
             _total, free = vb.free_ram_mb()
         except Exception:
             free = 0
-        return {"ok": True, "note": note, "freeMb": free}
+        return {"ok": True, "notes": notes, "freeMb": free}
 
     def start_recording(self):
         if self._rec_stream is not None:
@@ -318,6 +502,10 @@ def main():
         min_size=(640, 460),
         background_color="#12161A",
     )
+    # The bridge needs the window back: 📎 Upload opens the window's own
+    # native dialog, because a page-side file input returns a sandboxed
+    # blob and the text extractors read from a real path.
+    api.window = window
     # Edge WebView2 explicitly: it is present on this machine and the
     # alternative backends are not, so failing loudly beats falling back
     # to something untested.

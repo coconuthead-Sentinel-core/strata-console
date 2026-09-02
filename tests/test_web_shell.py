@@ -225,5 +225,97 @@ class ReadAlongTests(unittest.TestCase):
         self.assertIn("underline", block)
 
 
+class ContextSourceTests(unittest.TestCase):
+    """🌐 web, ☁ OneDrive and 📎 upload, present and wired.
+
+    The desktop shell has had these since it shipped; the web shell went
+    out without them. Each assertion here answers "is the control real,
+    and does pressing it reach Python" -- a button that renders and does
+    nothing is the defect this project names first.
+    """
+
+    def setUp(self):
+        self.html = open(HTML_PATH, encoding="utf-8").read()
+        self.js = open(JS_PATH, encoding="utf-8").read()
+
+    def test_all_three_controls_exist(self):
+        for element_id in ('id="src-web"', 'id="src-onedrive"',
+                           'id="upload"'):
+            with self.subTest(element_id=element_id):
+                self.assertIn(element_id, self.html)
+
+    def test_the_two_sources_are_real_checkboxes(self):
+        """Not styled divs -- the keyboard has to reach them."""
+        for element_id in ("src-web", "src-onedrive"):
+            with self.subTest(element_id=element_id):
+                self.assertIn(f'type="checkbox" id="{element_id}"',
+                              self.html)
+
+    def test_each_source_control_is_labelled(self):
+        for element_id in ("src-web", "src-onedrive"):
+            with self.subTest(element_id=element_id):
+                self.assertIn(f'for="{element_id}"', self.html)
+
+    def test_the_attachment_line_announces_itself(self):
+        """A file attaching without a screen reader saying so is silent
+        success -- the same class of defect as silent failure."""
+        block = self.html[self.html.index('id="attached"'):
+                          self.html.index('id="attached"') + 120]
+        self.assertIn("aria-live", block)
+
+    def test_every_control_reaches_the_bridge(self):
+        for call in ("api.set_source(", "api.upload_document(",
+                     "api.clear_attachment(", "api.poll_notes(",
+                     "api.busy_for("):
+            with self.subTest(call=call):
+                self.assertIn(call, self.js)
+
+    def test_the_notes_queue_is_actually_drained(self):
+        """poll_notes replaced a bridge method no page ever called. If
+        the timer goes away, the note channel is dead again."""
+        self.assertIn("setInterval(pollNotes", self.js)
+
+    def test_the_page_never_holds_the_uploaded_text(self):
+        """Only name and label cross the bridge; the body can be two
+        million characters and belongs in Python."""
+        self.assertNotIn("attachment.text", self.js)
+
+    def test_the_answer_reports_what_it_read(self):
+        self.assertIn("r.used", self.js)
+
+
+class BridgeSurfaceTests(unittest.TestCase):
+    """The page calls these by name. Import the module and look.
+
+    Imported rather than grepped: a method that exists in the file but
+    not on the class -- indented one level wrong -- greps clean and
+    fails at runtime as a rejected promise, which the page shows as
+    nothing happening.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import strata_web
+        except Exception as e:            # pragma: no cover - env-dependent
+            raise unittest.SkipTest(f"strata_web not importable: {e}")
+        cls.web = strata_web
+
+    def test_every_method_the_page_calls_exists_on_the_bridge(self):
+        js = open(JS_PATH, encoding="utf-8").read()
+        called = set(re.findall(r"api\.([a-z_]+)\(", js))
+        for name in sorted(called):
+            with self.subTest(method=name):
+                self.assertTrue(
+                    callable(getattr(self.web.Api, name, None)),
+                    f"app.js calls api.{name}() and the bridge has no "
+                    f"such method")
+
+    def test_the_upload_filter_is_what_the_indexer_can_read(self):
+        from strata_tools import context_sources, doc_index
+        self.assertEqual(set(context_sources.UPLOAD_EXTENSIONS),
+                         set(doc_index.SUPPORTED))
+
+
 if __name__ == "__main__":
     unittest.main()

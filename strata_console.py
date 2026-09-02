@@ -18,8 +18,9 @@ import time
 import tkinter.font as tkfont
 import customtkinter as ctk
 
-from strata_tools import (dictation, keyboard, layout, modes,
-                          selection, session, speech, theme, window_fit)
+from strata_tools import (context_sources, dictation, keyboard, layout,
+                          modes, selection, session, speech, theme,
+                          window_fit)
 
 # The engine. Both shells import it; neither owns it. DB_PATH is
 # deliberately NOT re-exported here -- see strata_core's docstring.
@@ -348,26 +349,16 @@ class StrataConsole:
 
         # Context sources: checked boxes, or natural phrasing — asking
         # Strata to search should just WORK.
-        use_web = bool(self.web_var.get())
+        use_web = context_sources.wants_web(user_input,
+                                            bool(self.web_var.get()))
         use_onedrive = bool(self.onedrive_var.get())
-        low = user_input.lower()
-        if not use_web:
-            for phrase in ("search the web", "search the internet",
-                           "search online", "web search", "look online",
-                           "look this up", "look up online",
-                           "check the internet", "check online",
-                           "google ", "on the internet"):
-                if phrase in low:
-                    use_web = True
-                    break
 
         # Conversational input → run the (possibly slow, CPU-bound) pipeline off the
         # UI thread so the window stays responsive while the local model thinks.
         self._append_output(f"You: {user_input}")
         self._set_busy(True)
-        busy = "🔎 searching…" if (use_web or use_onedrive or self._attachment) \
-            else "thinking (local model)…"
-        self.status_label.configure(text=busy)
+        self.status_label.configure(text=context_sources.busy_label(
+            use_web, use_onedrive, self._attachment is not None))
         threading.Thread(
             target=self._process_async,
             args=(user_input, use_web, use_onedrive), daemon=True
@@ -921,21 +912,33 @@ class StrataConsole:
 
     # ═══ Context sources: web, OneDrive, uploaded documents ════════════════
     def _gather_context(self, user_input, use_web, use_onedrive):
-        """Assemble grounding text for this turn (worker thread)."""
-        parts = []
-        att = self._attachment
-        if att:
-            from strata_tools.retrieval import retrieve_from_text
-            body = retrieve_from_text(user_input, att.get("text", ""))
-            if body:
-                parts.append(f"From the attached file '{att['name']}':\n"
-                             + body)
-        if use_onedrive:
-            parts.append(self._onedrive_context(user_input))
+        """Assemble grounding text for this turn (worker thread).
+
+        The composition rule moved to ``strata_tools.context_sources``
+        when the web shell needed the same behaviour: two shells with a
+        copy each is two rules that agree until the first edit. What is
+        left here is the I/O -- the network call -- which is exactly
+        what the kernel must not contain if it is to stay testable.
+        """
+        if use_onedrive and getattr(self, "_onedrive_index", None) is None:
+            # Safety net: the box can be ticked in a session where the
+            # build never started. Scheduling here means the answer is
+            # "still indexing" rather than "nothing found", and the
+            # index exists by the next question.
+            try:
+                self.root.after(0, self._ensure_onedrive_index)
+            except Exception:
+                pass
+        web_text = ""
         if use_web:
             from strata_tools.web_search import web_search_context
-            parts.append(web_search_context(user_input))
-        return "\n\n".join(p for p in parts if p)
+            web_text = web_search_context(user_input)
+        return context_sources.gather(
+            user_input,
+            attachment=self._attachment,
+            onedrive_index=getattr(self, "_onedrive_index", None),
+            use_onedrive=use_onedrive,
+            web_text=web_text)
 
     def _onedrive_toggled(self):
         if self.onedrive_var.get():
@@ -972,22 +975,6 @@ class StrataConsole:
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _onedrive_context(self, query):
-        index = getattr(self, "_onedrive_index", None)
-        if index is None:
-            try:
-                self.root.after(0, self._ensure_onedrive_index)
-            except Exception:
-                pass
-            return ("NOTE: the user's OneDrive files are still being "
-                    "indexed. Tell the user the file index is still "
-                    "building and to ask again in a few minutes.")
-        if not index:
-            return ""
-        from strata_tools.retrieval import retrieve_from_index
-        hits = retrieve_from_index(query, index)
-        return ("From the user's OneDrive files:\n" + hits) if hits else ""
-
     def _upload_document(self):
         from tkinter import filedialog
         path = filedialog.askopenfilename(
@@ -1003,16 +990,15 @@ class StrataConsole:
         name = os.path.basename(path)
         text = extract_text(path) or ""
         if not text.strip():
-            self._append_output(f"📎 Couldn't read {name} — unsupported "
-                                "format or empty file.")
+            self._append_output(context_sources.unreadable_note(name))
             return
-        self._attachment = {"name": name, "text": text[:2_000_000]}
-        kb = max(1, len(text) // 1024)
-        self.attach_label.configure(
-            text=f"📎 {name} ({kb} KB) — attached; click here to remove")
-        self._append_output(f"📎 Attached {name}. Ask me about it — I'll "
-                            "read the relevant parts. It stays attached "
-                            "until you remove it.")
+        self._attachment = {
+            "name": name,
+            "text": text[:context_sources.MAX_ATTACHMENT_CHARS],
+        }
+        self.attach_label.configure(text=context_sources.attachment_label(
+            name, len(self._attachment["text"])))
+        self._append_output(context_sources.attachment_greeting(name))
 
     def _clear_attachment(self):
         if self._attachment is None:

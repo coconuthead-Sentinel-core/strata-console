@@ -60,6 +60,26 @@
   <button id="help" class="ctl" type="button">Help</button>
 </div>
 
+<!-- What the assistant is allowed to read this turn. The model never
+     reaches any of it: the shell fetches the text and hands it in. -->
+<div class="sources" role="group" aria-label="What the assistant may read">
+  <label class="check" for="src-web">
+    <input type="checkbox" id="src-web">
+    <span aria-hidden="true">🌐</span>&nbsp;Web search
+  </label>
+  <label class="check" for="src-onedrive">
+    <input type="checkbox" id="src-onedrive">
+    <span aria-hidden="true">☁</span>&nbsp;OneDrive files
+  </label>
+
+  <button id="upload" class="ctl" type="button">
+    <span aria-hidden="true">📎</span> Upload document
+  </button>
+  <button id="detach" class="ctl detach" type="button" hidden>Remove</button>
+
+  <output id="attached" class="attached" aria-live="polite"></output>
+</div>
+
 <div class="modes" role="radiogroup" aria-label="Operating mode">
   <button class="mode" data-zone="GREEN"  role="radio" aria-checked="true" type="button">
     <span class="dot" aria-hidden="true"></span>Green<small>active</small>

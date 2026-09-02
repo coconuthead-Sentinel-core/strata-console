@@ -158,6 +158,31 @@ select.ctl { padding-right: 8px; }
 }
 .spacer { flex: 1 1 auto; }
 
+/* --- context sources -------------------------------------------------- */
+/* Same controls as the tools row, one rule down, so the eye reads them
+   as a second row of the same bar rather than a new kind of thing. */
+.sources {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The attached-file line takes full ink rather than the muted tone.
+   This text names the document being read, which is not a decorative
+   detail, and full ink is the measured-safe choice on the ground. */
+.attached {
+  flex: 1 1 12ch;
+  min-width: 0;
+  color: var(--ink);
+  font-size: .9em;
+  /* A long file name must not push Upload off the row -- the Tk shell's
+     oldest defect was a control shoved past the edge of the window. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* --- modes ------------------------------------------------------------ */
 .modes { display: flex; gap: 8px; flex-wrap: wrap; }
 
@@ -270,6 +295,15 @@ select.ctl { padding-right: 8px; }
 .note.bad { border-left-color: #E09090; color: #E7B6B6; }
 
 .thinking { color: var(--ink-mute); font-style: italic; }
+
+/* "Read: 📎 lease.pdf · 🌐 web" under an answer. --ink-mute is measured
+   AA on both --ground and --surface (test_web_shell.py), and this is a
+   provenance footnote rather than the answer itself. */
+.used {
+  margin: .6em 0 0;
+  font-size: .85em;
+  color: var(--ink-mute);
+}
 
 /* --- composer --------------------------------------------------------- */
 .composer { display: flex; gap: 8px; align-items: flex-end; }

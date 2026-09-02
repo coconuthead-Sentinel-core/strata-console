@@ -88,6 +88,14 @@ answers "Requirement already satisfied", and changes nothing.
     synced documents (.docx/.pdf/.xlsx/.csv/.md/.txt/.html).
   - 📎 **Upload document** — attach any readable file; the console
     retrieves the passages relevant to each question.
+
+  All three are available in **both shells**, and all three persist:
+  an attached file and a ticked box stay in force for the rest of the
+  conversation, so the material can be discussed over many turns rather
+  than consulted once. The rule deciding what gets handed to the model
+  lives in `strata_tools/context_sources.py` — one tested kernel, not a
+  copy per shell. In the web shell each answer carries a `Read:` line
+  naming the sources actually consulted.
 - **Graceful degradation** — if Ollama or the model is missing, the
   deterministic template engine answers and the UI says so honestly.
 
@@ -122,7 +130,7 @@ shells sit on top of it:
 | | Launch | What it is |
 | --- | --- | --- |
 | **Desktop** (default) | `launch_strata.vbs` — desktop icon **Strata Console** (violet tile, ⚡) | CustomTkinter. The shipped, tested one. |
-| **Web** | `launch_strata_web.vbs` — desktop icon **Strata Console (Web)** (dark tile, blue **W**) | HTML/CSS/JS in a native WebView2 window via pywebview. Adds read-along highlighting. |
+| **Web** | `launch_strata_web.vbs` — desktop icon **Strata Console (Web)** (dark tile, blue **W**) | HTML/CSS/JS in a native WebView2 window via pywebview. Adds read-along highlighting, and reports which sources each answer read. |
 
 The two icons differ by colour and glyph, not only by name: they sit side
 by side on the desktop, and telling them apart should not require reading
@@ -141,9 +149,15 @@ Start-menu shortcuts live in
 > **two** shortcuts pointing at it — one on the desktop, one in the Start
 > menu — so if a launcher moves, repoint both.
 
-Both use the **same database, modes, voice path and Ollama daemon**.
-Neither is a rewrite of the other; the web shell exists to be compared
-against, and the desktop shell is unchanged.
+Both use the **same database, modes, voice path, context sources and
+Ollama daemon**. Neither is a rewrite of the other; the web shell
+exists to be compared against.
+
+As of 1.5.0 the comparison is fair: the web shell has the same three
+context sources as the desktop one. What made that safe was moving the
+rule into `strata_tools/context_sources.py` rather than copying it —
+duplicating logic across shells is how "two shells, one engine" stops
+being true, one edit at a time.
 
 The web shell is still local-first: no port is opened and no server runs
 — pywebview loads the page from disk and bridges to Python in-process.

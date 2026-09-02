@@ -270,6 +270,66 @@ wording's defects too. It now asserts what the message must *achieve*.
 
 ---
 
+## FB-009 — The web shell's memory watch reported to nobody
+
+**Status:** fixed, guarded · **Found:** 2026-09-02 · **Severity:** silent
+
+**What the owner saw.** Nothing — which is the problem. In the desktop
+shell, releasing the idle voice model prints a line saying so. In the
+web shell the same release happened and was never mentioned.
+
+**What was actually wrong.** `Api.memory_note()` existed, was correct,
+and was called by no one. `app.js` had no poll and no timer, so the
+note it returned had no route to the page. The background watch was
+doing real work — freeing ~221 MB on a machine that lives at 400–600 MB
+free — and its report went into a variable that was overwritten on the
+next tick.
+
+This is the same defect class as FB-005 and FB-006, wearing new
+clothes: **a capability the owner cannot reach is a capability that
+does not exist.** In a Tk shell it looks like a control that was never
+drawn. Across a JavaScript bridge it looks like a method nobody calls,
+which greps clean and reads as finished code.
+
+**Guard.**
+- `poll_notes()` replaces it — a drained queue, polled every five
+  seconds, shared by the memory watch and OneDrive indexing.
+- `tests/test_web_shell.py::test_the_notes_queue_is_actually_drained`
+  fails if the timer is removed.
+- `BridgeSurfaceTests::test_every_method_the_page_calls_exists_on_the_bridge`
+  imports the bridge and resolves **every** `api.*` call in `app.js`
+  against it. This catches the mirror-image failure — the page calling
+  a method that does not exist, which surfaces as a rejected promise
+  and looks, to the owner, exactly like nothing happening.
+
+---
+
+## FB-010 — Eleven web-search trigger phrases, none of them tested
+
+**Status:** fixed, guarded · **Found:** 2026-09-02 · **Severity:** latent
+
+**What the owner saw.** Nothing yet. This was found by reading, not by
+failing.
+
+**What was actually wrong.** Saying "look this up" turns on web search
+without touching the checkbox. The eleven phrases that do it were a
+literal tuple inside `strata_console.py`'s send handler — UI code, with
+no test able to reach it without a screen. A typo in any entry would
+have been invisible: the phrase would simply never fire, and the owner
+would conclude the feature was unreliable rather than that one string
+was wrong. The port to the web shell would have copied the tuple, and
+two copies of a rule is two rules.
+
+**Guard.**
+- The rule moved to `strata_tools/context_sources.py` as
+  `wants_web()` — pure, and shared by both shells.
+- `test_every_shipped_phrase_actually_fires` asserts each entry in
+  `TRIGGER_PHRASES` triggers, so a dead phrase fails the build.
+- `test_an_ordinary_question_does_not_reach_the_network` holds the
+  other side: an ordinary question must not silently reach the web.
+
+---
+
 ## Near-misses — caught before shipping, recorded because the reasoning is the value
 
 ### NM-008 — The layout planner and its own checker disagreed
