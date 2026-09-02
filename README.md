@@ -146,6 +146,46 @@ Start-menu shortcuts live in
 > Start menu — so if it moves, repoint both. This is why the file kept
 > its name when the shell behind it was replaced.
 
+### "It launched but it just says wait"
+
+Not a fault. Measured on this laptop (8 GB RAM, no GPU):
+
+| | Time |
+| --- | --- |
+| Window open, controls live | **0.01s** |
+| First reply, model **cold** | **~20s** — Ollama reads 2.3 GB into RAM |
+| Replies once **warm** | **~3s** |
+
+Ollama drops the model after `keep_alive` (10 minutes), so the 20-second
+load comes back on its own. Nothing is stuck; something large is being
+read from disk.
+
+Two things were changed so that wait is never mistaken for a hang again:
+
+1. **The model is warmed at startup.** A background thread loads it as
+   soon as the window opens, while the opening message is still being
+   read — so the cost is paid before anything is asked of it. Measured
+   effect: first user message went from **20.5s to 6.3s**. The console
+   says `🧠 Warming the local model — about 20 seconds, once.` and then
+   `🧠 Model ready`.
+2. **The wait counts out loud.** The placeholder ticks — `thinking
+   (local model)… 7s` — and when the model is genuinely cold it says so
+   instead: `loading the local model — first message, about 20 seconds…
+   12s`. A number that changes is the difference between an application
+   that is working and one that has frozen; a static placeholder for
+   twenty seconds is indistinguishable from a crash, and the owner read
+   it that way, correctly.
+
+If it stays on `loading…` well past a minute, check the daemon:
+
+```bash
+curl http://127.0.0.1:11434/api/ps
+```
+
+An empty `models` list plus a climbing counter means Ollama is still
+loading. No response at all means the daemon is not running, and the
+console will say `🧩 template mode` rather than pretending.
+
 #### Why the CustomTkinter console was retired (2026-09-01)
 
 The project ran two interchangeable shells for a day so they could be

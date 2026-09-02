@@ -346,6 +346,63 @@ two copies of a rule is two rules.
 
 ---
 
+## FB-011 — Twenty seconds of silence read as an app that would not start
+
+**Status:** fixed, guarded · **Found:** 2026-09-01 · **Severity:** major
+
+**What the owner saw.** The console launched and then "just asks you to
+wait". He reported the functionality as incomplete and the app as not
+working.
+
+**What was actually wrong.** Nothing was broken, and that is the point.
+Measured on this laptop:
+
+| | |
+| --- | --- |
+| window open, bridge live | 0.01s |
+| first reply, model cold | **20.5s** |
+| replies once warm | 2.9s |
+
+Ollama reads 2.3 GB into RAM with `size_vram: 0` — CPU only — and drops
+the model again after `keep_alive`, so the cost returns on its own. The
+page showed a static `thinking (local model)…` for the whole twenty
+seconds: no elapsed time, no cause, no way to tell work from a hang.
+**A wait with no evidence of progress is not a slow feature, it is an
+unreadable one**, and reading it as a failed launch was correct given
+what the screen said.
+
+Two hypotheses were checked and discarded before this one, which is
+worth recording because both looked strong. The database and every
+source file carry `ReparsePoint` — OneDrive Files On-Demand placeholders
+— so hydration stalls were the first suspect; **zero** files were
+actually `Offline`, so nothing was being downloaded. Startup was then
+timed against the real database rather than a temporary one, in case
+97 memory threads were the cost: `bootstrap()` returned in 0.00s. Only
+timing three consecutive messages (20.5s, 2.9s, 3.0s) located it.
+
+**Guard.**
+- `LLMBrain.warm()` is called on a background thread at startup, so the
+  load happens while the opening message is being read rather than
+  against the first question. Measured: first user message 20.5s → 6.3s.
+- `LLMBrain.is_loaded()` reports residency from the daemon, returning
+  False whenever the answer is unknown — the asymmetry is deliberate,
+  since promising a fast reply and delivering twenty seconds is the
+  failure being prevented.
+- `context_sources.busy_label(..., model_loading=True)` names the cause
+  and the duration, and outranks every other label because it is the
+  longest wait by an order of magnitude.
+- The page ticks the placeholder every second and clears the interval in
+  a `finally`; `tests/test_web_shell.py` fails if either goes away.
+- `tests/test_model_readiness.py` covers residency reporting with no
+  daemon present, which is also the build-machine case.
+
+**The lesson:** *an honest slow path still has to be legible.* The
+project's standing law is that a control which does nothing is a defect;
+this is its sibling — **a control that does something invisible is
+also a defect.**
+
+---
+
 ## Near-misses — caught before shipping, recorded because the reasoning is the value
 
 ### NM-008 — The layout planner and its own checker disagreed

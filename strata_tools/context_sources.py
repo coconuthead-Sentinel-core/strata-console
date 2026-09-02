@@ -124,14 +124,26 @@ def unreadable_note(name: str) -> str:
     return f"📎 Couldn't read {name} — unsupported format or empty file."
 
 
-def busy_label(use_web: bool, use_onedrive: bool,
-               has_attachment: bool) -> str:
+MODEL_LOADING_LABEL = ("loading the local model — first message, "
+                       "about 20 seconds")
+
+
+def busy_label(use_web: bool, use_onedrive: bool, has_attachment: bool,
+               model_loading: bool = False) -> str:
     """Status text while the turn runs. Pure.
 
-    Searching and thinking take visibly different amounts of time, and
-    saying which one is happening is the difference between a wait and
-    a hang.
+    Searching, loading and thinking take visibly different amounts of
+    time, and saying which one is happening is the difference between a
+    wait and a hang.
+
+    ``model_loading`` wins over the others because it is the longest by
+    an order of magnitude: measured at ~20s cold against ~3s warm on
+    this laptop. A twenty-second wait labelled "thinking" reads as a
+    broken application; the same wait labelled with its cause and its
+    length reads as a machine doing work.
     """
+    if model_loading:
+        return MODEL_LOADING_LABEL + "…"
     if use_web or use_onedrive or has_attachment:
         return "🔎 searching…"
     return "thinking (local model)…"

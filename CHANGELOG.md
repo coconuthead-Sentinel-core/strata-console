@@ -10,6 +10,42 @@ root cause and the guard.
 
 ---
 
+## [2.1.0] — 2026-09-01
+
+### Fixed
+- **The first message no longer looks like a hang** (FB-011). Reported
+  as "it launches but just asks you to wait". Nothing was broken: a cold
+  Ollama load is 2.3 GB into RAM on a CPU-only laptop, measured at
+  **20.5s for the first reply against 2.9s once warm**, and the page
+  showed a static `thinking (local model)…` throughout. A wait with no
+  evidence of progress cannot be told apart from a crash.
+
+### Added
+- **Model warm-up at startup.** `LLMBrain.warm()` runs on a background
+  thread as the window opens, so the load is paid while the opening
+  message is being read rather than against the owner's first question.
+  Measured effect: first user message **20.5s → 6.3s**. Progress is
+  reported through the existing note queue.
+- **`LLMBrain.is_loaded()`** — residency straight from the daemon,
+  returning False whenever the answer is unknown. The asymmetry is
+  deliberate: promising a fast reply and delivering twenty seconds is
+  the failure being prevented.
+- **An elapsed counter on the placeholder.** `thinking (local model)…
+  7s`, or `loading the local model — first message, about 20 seconds…
+  12s` when the model is genuinely cold. A number that changes is the
+  difference between working and frozen.
+- README section **"It launched but it just says wait"** with the real
+  numbers and the `curl /api/ps` check.
+
+### Investigation notes
+Two strong hypotheses were checked and discarded first, recorded in
+FB-011 because both looked convincing. The database and all 100 source
+files carry `ReparsePoint` — OneDrive Files On-Demand — so hydration
+stalls were the first suspect; **zero** files were actually `Offline`.
+Startup was then timed against the real 97-thread database rather than a
+temporary one; `bootstrap()` returned in 0.00s. Only timing three
+consecutive messages located the cost.
+
 ## [2.0.0] — 2026-09-01
 
 Major, because a whole front end was removed. Nothing the owner can do

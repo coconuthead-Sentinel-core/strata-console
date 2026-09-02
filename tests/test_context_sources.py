@@ -169,6 +169,23 @@ class BusyLabelTests(unittest.TestCase):
             with self.subTest(args=args):
                 self.assertEqual(cs.busy_label(*args), "🔎 searching…")
 
+    def test_a_cold_model_is_announced_over_everything_else(self):
+        """~20s cold against ~3s warm, measured. The longest wait is the
+        one that has to be named, or it reads as a hung application."""
+        label = cs.busy_label(True, True, True, model_loading=True)
+        self.assertIn("loading", label)
+        self.assertNotIn("searching", label)
+
+    def test_the_cold_label_says_how_long_and_that_it_is_once(self):
+        label = cs.busy_label(False, False, False, model_loading=True)
+        self.assertIn("20 seconds", label)
+        self.assertIn("first message", label)
+
+    def test_a_warm_model_does_not_mention_loading(self):
+        self.assertNotIn("loading",
+                         cs.busy_label(False, False, False,
+                                       model_loading=False))
+
 
 class UploadFilterTests(unittest.TestCase):
     def test_the_dialog_offers_what_the_indexer_can_actually_read(self):

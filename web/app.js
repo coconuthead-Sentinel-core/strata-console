@@ -379,12 +379,26 @@ async function send() {
      "look this up" counts as ticking the box, and that rule lives in
      strata_tools/context_sources.py so both shells obey one copy of
      it. Asking costs one bridge call and saves a second rule here. */
+  /* A wait with no evidence of progress cannot be told apart from a
+     hang. The local model takes ~20s cold (2.3 GB into RAM, no GPU)
+     and ~3s warm, so the placeholder counts out loud: a number that
+     changes is the difference between "working" and "frozen". */
+  let base = 'thinking (local model)';
   try {
     const b = await api.busy_for(text);
+    base = (b.label || base).replace(/…$/, '');
     $('status').textContent = b.label;
-    const think = pending.querySelector('.thinking');
-    if (think) think.textContent = b.label;
   } catch (e) { /* a missing label is cosmetic; the turn still runs */ }
+
+  const startedAt = Date.now();
+  const tick = () => {
+    const think = pending.querySelector('.thinking');
+    if (!think) return;
+    const secs = Math.floor((Date.now() - startedAt) / 1000);
+    think.textContent = secs < 1 ? base + '…' : `${base}… ${secs}s`;
+  };
+  tick();
+  const ticker = setInterval(tick, 1000);
 
   try {
     const r = await api.send(text);
@@ -412,6 +426,7 @@ async function send() {
     pending.remove();
     note('Bridge error: ' + e, true);
   } finally {
+    clearInterval(ticker);
     $('send').disabled = false;
     log.scrollTop = log.scrollHeight;
   }

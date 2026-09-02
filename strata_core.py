@@ -409,6 +409,64 @@ class LLMBrain:
         except Exception as e:
             self.last_error = f"Ollama daemon not reachable: {type(e).__name__}"
 
+    def is_loaded(self):
+        """Is the model resident in RAM right now? Tolerant; False on doubt.
+
+        Ollama keeps a model loaded for ``keep_alive`` and then drops it,
+        so this is not a fact that can be cached -- the honest answer
+        changes on its own ten minutes after the last message. Measured
+        on this laptop: resident, a reply takes ~3s; cold, the first one
+        takes ~20s while 2.3 GB is read into RAM.
+
+        False when the answer is unknown, because the cost of being
+        wrong is asymmetric: promising a fast reply and delivering a
+        20-second wait is the failure this method exists to prevent.
+        """
+        if not self.available or not _OLLAMA_IMPORTED:
+            return False
+        try:
+            data = ollama.ps()
+            models = getattr(data, "models", None)
+            if models is None and isinstance(data, dict):
+                models = data.get("models", [])
+            stem = self.model.split(":")[0]
+            for m in (models or []):
+                name = (getattr(m, "model", None)
+                        or getattr(m, "name", None)
+                        or (m.get("model") or m.get("name")
+                            if isinstance(m, dict) else None))
+                if name and stem in str(name):
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def warm(self):
+        """Load the model now, so the owner's first message does not.
+
+        The cold load is unavoidable -- it is 2.3 GB going into RAM on a
+        CPU-only machine. What IS avoidable is charging it to the first
+        thing he types. Called on a background thread at startup, it
+        moves the wait to a moment when he is not waiting on anything.
+
+        One token is requested rather than none: an empty message is
+        rejected by some client versions, and a single token costs
+        nothing next to the load it triggers.
+        """
+        if not self.available:
+            return False
+        try:
+            ollama.chat(
+                model=self.model,
+                messages=[{"role": "user", "content": "hi"}],
+                keep_alive=self.keep_alive,
+                options={"num_ctx": self.num_ctx, "num_predict": 1},
+            )
+            return True
+        except Exception as e:
+            self.last_error = f"{type(e).__name__}: {e}"
+            return False
+
     @staticmethod
     def _installed_models():
         """Return installed model names, tolerant of ollama lib version differences."""

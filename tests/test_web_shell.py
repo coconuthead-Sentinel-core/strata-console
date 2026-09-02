@@ -330,6 +330,21 @@ class BridgeSurfaceTests(unittest.TestCase):
                               f"/{name} is documented but run_command "
                               f"never branches on it")
 
+    def test_the_wait_counts_out_loud(self):
+        """The cold model takes ~20s. A static placeholder for that long
+        reads as a hang, so the page must tick and must stop ticking."""
+        js = open(JS_PATH, encoding="utf-8").read()
+        self.assertIn("setInterval(tick", js)
+        self.assertIn("clearInterval(ticker)", js)
+
+    def test_the_ticker_is_cleared_in_a_finally(self):
+        """An interval left running after an error keeps counting under
+        an answer that already arrived."""
+        js = open(JS_PATH, encoding="utf-8").read()
+        tail = js[js.index("clearInterval(ticker)") - 200:
+                  js.index("clearInterval(ticker)")]
+        self.assertIn("finally", tail)
+
     def test_the_page_asks_python_for_the_grammar(self):
         """If app.js ever grows its own list of slash commands, there
         are two grammars and they will disagree."""

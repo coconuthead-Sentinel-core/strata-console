@@ -77,6 +77,7 @@ class Api:
         self._whisper_model = None
         self._whisper_tier = None
         self._whisper_used_at = None
+        self._start_warmup()
         # Same idle-release policy as the desktop shell, and for the same
         # measured reason: the model holds ~174 MB and releasing returns
         # ~221 MB on a machine that lives at 400-600 MB free. A timer
@@ -237,6 +238,56 @@ class Api:
         return {"ok": True, "attachment": None,
                 "message": "📎 Attachment removed."}
 
+    # --- the local model's readiness ---------------------------------------
+    #
+    # Measured on this laptop: a cold first reply takes ~20 seconds while
+    # Ollama reads 2.3 GB into RAM with no GPU; once resident, replies
+    # take ~3 seconds. The model is dropped again after keep_alive, so
+    # the 20 seconds comes back on its own.
+    #
+    # Neither number is a defect. Showing a static "thinking…" for
+    # twenty seconds is: a wait with no evidence of progress cannot be
+    # told apart from a hang, and the owner reasonably read it as the
+    # app failing to start.
+
+    def _start_warmup(self):
+        """Load the model in the background at startup.
+
+        The cold load cannot be avoided; charging it to the first thing
+        the owner types can. This runs while he is still reading the
+        opening message, and reports through the same note queue as
+        everything else.
+        """
+        def work():
+            brain = self.pipeline.brain
+            try:
+                if not brain.available or brain.is_loaded():
+                    return
+                self._push_note("🧠 Warming the local model — about 20 "
+                                "seconds, once. You can type now; the "
+                                "first reply will wait for this.")
+                if brain.warm():
+                    self._push_note("🧠 Model ready — replies take about "
+                                    "three seconds now.")
+                else:
+                    self._push_note(f"🧠 The model did not load: "
+                                    f"{brain.last_error}")
+            except Exception as e:
+                self._push_note(f"🧠 Model warm-up failed: "
+                                f"{type(e).__name__}: {e}")
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def model_state(self):
+        """Whether a reply will be fast or will wait for a load."""
+        brain = self.pipeline.brain
+        try:
+            loaded = bool(brain.is_loaded())
+        except Exception:
+            loaded = False
+        return {"ok": True, "available": bool(brain.available),
+                "loaded": loaded}
+
     def busy_for(self, text):
         """The status line to show while this turn runs.
 
@@ -246,10 +297,17 @@ class Api:
         first time either was edited.
         """
         use_web = context_sources.wants_web(text or "", self._sources["web"])
+        brain = self.pipeline.brain
+        try:
+            loading = bool(brain.available) and not brain.is_loaded()
+        except Exception:
+            loading = False
         return {"ok": True,
+                "loading": loading,
                 "label": context_sources.busy_label(
                     use_web, self._sources["onedrive"],
-                    self._attachment is not None)}
+                    self._attachment is not None,
+                    model_loading=loading)}
 
     # --- commands ---------------------------------------------------------
     def run_command(self, text):
