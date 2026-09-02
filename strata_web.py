@@ -191,9 +191,17 @@ class Api:
                     "error": "The window is not ready yet — try again in "
                              "a moment."}
         spec = ";".join("*" + e for e in context_sources.UPLOAD_EXTENSIONS)
+        # pywebview renamed this constant: FileDialog.OPEN is current and
+        # OPEN_DIALOG is deprecated with a removal promised. Ask for the
+        # new name and fall back, so the upgrade that removes the old one
+        # does not take the upload button with it.
+        open_dialog = getattr(getattr(webview, "FileDialog", None), "OPEN",
+                              None)
+        if open_dialog is None:
+            open_dialog = webview.OPEN_DIALOG
         try:
             picked = self.window.create_file_dialog(
-                webview.OPEN_DIALOG, allow_multiple=False,
+                open_dialog, allow_multiple=False,
                 file_types=(f"Readable files ({spec})", "All files (*.*)"))
         except Exception as e:
             return {"ok": False,
