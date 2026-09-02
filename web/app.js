@@ -344,6 +344,34 @@ async function send() {
   box.value = '';
   box.style.height = 'auto';
 
+  /* A slash command is an instruction to the console, not a question
+     for the model. Asked of Python first: the grammar lives in
+     strata_tools/commands.py, and a copy here would be a second
+     grammar. handled:false means "ordinary message, carry on". */
+  if (text.startsWith('/')) {
+    try {
+      const c = await api.run_command(text);
+      if (c && c.handled) {
+        if (c.clearLog) {
+          stopReading();
+          log.innerHTML = '';
+          lastReply = ''; lastSpeakable = ''; lastTurn = null;
+        }
+        if (c.message) {
+          if (c.markdown) lastTurn = turn('Strata', markdown(c.message));
+          else note(c.message, !!c.bad);
+        }
+        if (c.status) $('status').textContent = c.status;
+        if (c.zone) setZone(c.zone);
+        box.focus();
+        return;
+      }
+    } catch (e) {
+      note('Command failed: ' + e, true);
+      return;
+    }
+  }
+
   const pending = turn('Strata', '<p class="thinking">thinking…</p>');
   $('send').disabled = true;
 
@@ -588,7 +616,14 @@ document.addEventListener('DOMContentLoaded', () => {
     $('msg').focus();
   });
 
-  $('help').addEventListener('click', () => {
+  $('help').addEventListener('click', async () => {
+    /* The command list comes from Python so it cannot drift from the
+       table that actually dispatches them. */
+    let cmds = '';
+    try {
+      const c = await api.run_command('/help');
+      if (c && c.message) cmds = '\n\n' + c.message;
+    } catch (e) { /* the rest of Help is still worth showing */ }
     lastTurn = turn('Strata', markdown([
       '### Keyboard',
       '- **Tab** moves through every control — all of them, natively.',
@@ -606,7 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
       '`open paren` / `close paren`, `cap <word>`, `all caps on` … `all caps off`.',
       'If the recogniser already heard the pause and punctuated it, the',
       'duplicate is cleaned up for you.'
-    ].join('\n')));
+    ].join('\n') + cmds));
   });
 
   document.querySelectorAll('.mode').forEach((b) => {

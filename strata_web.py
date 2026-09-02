@@ -37,7 +37,8 @@ import time
 import webview
 
 from strata_core import ALL_GLYPHS, StrataPipeline
-from strata_tools import context_sources, dictation, session, speech
+from strata_tools import (commands, context_sources, dictation, session,
+                          speech)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INDEX = os.path.join(HERE, "web", "index.html")
@@ -249,6 +250,61 @@ class Api:
                 "label": context_sources.busy_label(
                     use_web, self._sources["onedrive"],
                     self._attachment is not None)}
+
+    # --- commands ---------------------------------------------------------
+    def run_command(self, text):
+        """Execute a slash command. Returns None-ish when it is not one.
+
+        Kept separate from ``send`` so the page can tell the difference
+        without knowing the grammar. ``handled: False`` means "this was
+        an ordinary message, send it to the model" -- the one answer
+        that must never be confused with "I did not recognise it",
+        because an unrecognised command silently answered by the model
+        looks exactly like the console working.
+        """
+        parsed = commands.parse(text)
+        if parsed is None:
+            return {"ok": True, "handled": False}
+
+        name = parsed["name"]
+        if not parsed["known"]:
+            return {"ok": True, "handled": True,
+                    "message": commands.unknown_message(text),
+                    "bad": True}
+
+        if name == "status":
+            return {"ok": True, "handled": True,
+                    "message": self.pipeline.get_status(),
+                    "status": self.pipeline.get_status()}
+
+        if name == "lexicon":
+            return {"ok": True, "handled": True, "markdown": True,
+                    "message": commands.lexicon_text(ALL_GLYPHS)}
+
+        if name == "help":
+            return {"ok": True, "handled": True, "markdown": True,
+                    "message": commands.help_text()}
+
+        if name == "clear":
+            out = self.clear()
+            out["handled"] = True
+            out["clearLog"] = True
+            return out
+
+        if name == "mode":
+            argument = parsed["argument"]
+            if not argument:
+                return {"ok": True, "handled": True, "bad": True,
+                        "message": "Which mode? Try /mode green, "
+                                   "/mode yellow or /mode red."}
+            out = self.change_zone(argument)
+            out["handled"] = True
+            return out
+
+        # Unreachable while COMMANDS and this dispatch agree -- and a
+        # test asserts they do, so this is a guard, not a code path.
+        return {"ok": True, "handled": True, "bad": True,
+                "message": commands.unknown_message(text)}
 
     # --- conversation -----------------------------------------------------
     def send(self, text):

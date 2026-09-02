@@ -316,6 +316,29 @@ class BridgeSurfaceTests(unittest.TestCase):
         self.assertEqual(set(context_sources.UPLOAD_EXTENSIONS),
                          set(doc_index.SUPPORTED))
 
+    def test_every_documented_command_is_actually_dispatched(self):
+        """A command in the table with no branch in run_command would
+        fall through to 'unknown' -- documented, listed by /help, and
+        broken. Read the dispatch and check each name appears."""
+        import inspect
+
+        from strata_tools import commands
+        source = inspect.getsource(self.web.Api.run_command)
+        for name in commands.COMMANDS:
+            with self.subTest(name=name):
+                self.assertIn(f'"{name}"', source,
+                              f"/{name} is documented but run_command "
+                              f"never branches on it")
+
+    def test_the_page_asks_python_for_the_grammar(self):
+        """If app.js ever grows its own list of slash commands, there
+        are two grammars and they will disagree."""
+        js = open(JS_PATH, encoding="utf-8").read()
+        self.assertIn("api.run_command(", js)
+        for name in ("'/status'", '"/status"', "'/lexicon'", '"/lexicon"'):
+            self.assertNotIn(name, js,
+                             "the page is matching command names itself")
+
 
 if __name__ == "__main__":
     unittest.main()
