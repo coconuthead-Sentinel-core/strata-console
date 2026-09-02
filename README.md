@@ -59,14 +59,16 @@ use, and the console's own error names `sys.executable` and the exact
 pip line for it -- because a bare `pip install` resolves elsewhere,
 answers "Requirement already satisfied", and changes nothing.
 
-## Features (v1.1)
+## Features (v2.0.0)
 
-- **Chat console** with dyslexia-friendly reading fonts (OpenDyslexic
-  when installed), adjustable text size, persisted preferences.
-- **Toolbar** (dockable — pop it out to float on top): 🎤 push-to-talk
-  Whisper dictation (faster-whisper, Fast/Accurate/Best), 🔊 read the
-  last reply aloud with a 🐢/🐇 speed picker, ❓ step-by-step guided
-  tour.
+- **Chat console** with reading fonts (Atkinson Hyperlegible,
+  OpenDyslexic when installed), adjustable text size, persisted
+  preferences.
+- **Voice both ways**: 🎤 push-to-talk Whisper dictation
+  (faster-whisper, Fast/Accurate/Best) and 🔊 read-aloud. While an
+  answer is spoken the current sentence is highlighted and the current
+  word underlined; click any sentence to hear it again from there, and
+  tick **Auto** to have every answer read as it arrives.
 - **Spoken punctuation** while dictating — "period", "question mark",
   "new line", "cap", "caps on/off", "all caps on/off". Whisper's own
   auto-punctuation is de-duplicated against what you say, so a spoken
@@ -75,7 +77,10 @@ answers "Requirement already satisfied", and changes nothing.
   numbers, money, percents, ordinals, years and abbreviations are
   expanded before the text reaches the voice. Inline `code` is held
   atomic so a file path is not read as arithmetic.
-- **Ctrl+A** selects all of whichever box has focus.
+- **Keyboard throughout** — every control is a real `<button>` or
+  `<input>`, so Tab reaches all of them and `:focus-visible` shows
+  where you are. **Enter** sends, **Shift+Enter** starts a new line,
+  **Ctrl+L** clears, **Escape** stops reading.
 - **Clear** (button, `/clear`, or Ctrl+L) empties the transcript *and*
   the context the model recalls. Both halves move together: clearing
   only the view would leave the assistant quoting the conversation you
