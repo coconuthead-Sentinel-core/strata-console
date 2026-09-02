@@ -330,6 +330,15 @@ class BridgeSurfaceTests(unittest.TestCase):
                               f"/{name} is documented but run_command "
                               f"never branches on it")
 
+    def test_free_ram_is_on_screen(self):
+        """3 s with room, 100 s without, measured. The condition that
+        decides how the app feels must be visible, not inferred."""
+        html = open(HTML_PATH, encoding="utf-8").read()
+        js = open(JS_PATH, encoding="utf-8").read()
+        self.assertIn('id="ram"', html)
+        self.assertIn("api.model_state(", js)
+        self.assertIn("showRam(", js)
+
     def test_the_wait_counts_out_loud(self):
         """The cold model takes ~20s. A static placeholder for that long
         reads as a hang, so the page must tick and must stop ticking."""

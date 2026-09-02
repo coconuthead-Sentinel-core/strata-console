@@ -37,6 +37,17 @@ class WantsWebTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertTrue(cs.wants_web(phrase))
 
+    def test_everyday_phrasings_added_after_the_owner_used_them(self):
+        """He asked in words the list did not cover and the model said
+        it could not browse. These are the words people use."""
+        for phrase in ("search for tide tables please",
+                       "can you look up the part number",
+                       "find out when the store closes",
+                       "what's the latest news on the strike",
+                       "do a search on this"):
+            with self.subTest(phrase=phrase):
+                self.assertTrue(cs.wants_web(phrase))
+
     def test_the_phrase_is_matched_whatever_the_casing(self):
         self.assertTrue(cs.wants_web("Please SEARCH THE INTERNET for it"))
 

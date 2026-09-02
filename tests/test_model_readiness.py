@@ -46,6 +46,44 @@ class UnavailableBrainTests(unittest.TestCase):
         self.brain.warm()
 
 
+class ToolBriefingTests(unittest.TestCase):
+    """What the model is told about the console's tools.
+
+    A 3B model, asked to search with no results provided, answers "I
+    can't browse the internet" from its training. True of the model,
+    false of the app -- and reported by the owner as web search not
+    working. The briefing has to change with whether results exist.
+    """
+
+    def setUp(self):
+        self.brain = LLMBrain.__new__(LLMBrain)
+        self.brain.model = "llama3.2:3b"
+        self.brain.available = True
+
+    def prompt(self, grounded):
+        return self.brain._system_prompt("GREEN", {}, [], "ctx",
+                                         grounded=grounded)
+
+    def test_with_results_the_model_is_told_the_search_is_done(self):
+        p = self.prompt(True)
+        self.assertIn("ALREADY searched", p)
+        self.assertIn("Do not say you cannot search", p)
+
+    def test_without_results_the_model_is_told_how_to_get_them(self):
+        p = self.prompt(False)
+        self.assertIn("Web search", p)
+        self.assertIn("do NOT say you are unable", p)
+
+    def test_the_two_briefings_differ(self):
+        self.assertNotEqual(self.prompt(True), self.prompt(False))
+
+    def test_default_is_the_ungrounded_briefing(self):
+        """Safer wrong answer: claiming a search happened when it did
+        not is worse than pointing at the checkbox."""
+        p = self.brain._system_prompt("GREEN", {}, [], "ctx")
+        self.assertIn("do NOT say you are unable", p)
+
+
 class UnknownStateTests(unittest.TestCase):
     """When the daemon cannot be asked, the answer is 'not loaded'."""
 

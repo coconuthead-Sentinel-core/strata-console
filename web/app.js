@@ -504,11 +504,20 @@ async function upload() {
    voice-model release watch and OneDrive indexing. Before this loop
    existed the bridge had a memory_note() method that no page called,
    so the release watch was reporting to nobody. */
+function showRam(freeMb) {
+  const el = $('ram');
+  if (!el) return;
+  el.textContent = (typeof freeMb === 'number' && freeMb > 0)
+    ? 'RAM ' + freeMb.toLocaleString() + ' MB free'
+    : '';
+}
+
 async function pollNotes() {
   if (!api) return;
   try {
     const r = await api.poll_notes();
     (r.notes || []).forEach((n) => note(n));
+    showRam(r.freeMb);
   } catch (e) { /* a dropped poll is not worth a message */ }
 }
 
@@ -530,6 +539,14 @@ async function boot() {
   $('autoread').checked = !!s.autoread;
   setZone(s.zone);
   $('status').textContent = s.status;
+
+  /* Memory headroom, straight away. The machine's condition is the
+     single biggest factor in how this app feels, and the owner asked
+     whether RAM was the problem -- the answer should be on screen. */
+  try {
+    const m = await api.model_state();
+    showRam(m.freeMb);
+  } catch (e) { /* the 5-second poll will fill it in */ }
 
   /* Source state lives on the bridge, so a reload finds the boxes and
      the attachment exactly as they were left. */

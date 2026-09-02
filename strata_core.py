@@ -401,13 +401,41 @@ class LLMBrain:
         if not _OLLAMA_IMPORTED:
             self.last_error = "ollama package not installed"
             return
+        # Resident size as Ollama reports it, so the RAM budget can be
+        # computed rather than assumed (strata_tools/model_budget.py).
+        # Zero when unknown, which the budget treats as "cannot plan".
+        self.size_bytes = 0
         try:
             names = self._installed_models()
             self.available = any(self.model.split(":")[0] in n for n in names)
             if not self.available:
                 self.last_error = f"model '{self.model}' not pulled (run: ollama pull {self.model})"
+            else:
+                self.size_bytes = self._installed_size(self.model)
         except Exception as e:
             self.last_error = f"Ollama daemon not reachable: {type(e).__name__}"
+
+    @staticmethod
+    def _installed_size(model):
+        """Bytes on disk for ``model`` per ``ollama list``; 0 if unknown."""
+        stem = model.split(":")[0]
+        data = ollama.list()
+        models = getattr(data, "models", None)
+        if models is None and isinstance(data, dict):
+            models = data.get("models", [])
+        for m in (models or []):
+            n = getattr(m, "model", None)
+            if n is None and isinstance(m, dict):
+                n = m.get("model") or m.get("name")
+            if n and stem in str(n):
+                size = getattr(m, "size", None)
+                if size is None and isinstance(m, dict):
+                    size = m.get("size")
+                try:
+                    return int(size or 0)
+                except (TypeError, ValueError):
+                    return 0
+        return 0
 
     def is_loaded(self):
         """Is the model resident in RAM right now? Tolerant; False on doubt.
@@ -483,15 +511,37 @@ class LLMBrain:
                 names.append(n)
         return names
 
-    def _system_prompt(self, zone, tone, glyph_meanings, context):
+    # What the model is told about the console's tools. Without this a
+    # small model answers "I can't browse the internet" from its training
+    # whenever it is asked to search -- true of the model, false of the
+    # app, and the owner reported it as the feature not working.
+    TOOLS_WHEN_GROUNDED = (
+        "The console has ALREADY searched the web and/or the user's own "
+        "files for this message; the results are in the context below "
+        "under 'Additional context (web/files)'. Use them and cite the "
+        "sources by name. Do not say you cannot search -- the search has "
+        "been done for you."
+    )
+    TOOLS_WHEN_NOT = (
+        "You cannot browse the web yourself, but the console can search "
+        "for you. If the user asks you to search, look something up, or "
+        "wants current information, do NOT say you are unable to: tell "
+        "them to tick the 🌐 Web search box or say 'search the web for "
+        "...', and the results will be provided on the next message."
+    )
+
+    def _system_prompt(self, zone, tone, glyph_meanings, context,
+                       grounded=False):
         voice = tone.get("voice", "clear and direct")
         token_line = ""
         if glyph_meanings:
             ops = ", ".join(f"{m['glyph']} ({m['function']})" for m in glyph_meanings)
             token_line = f"\nThe user included these operator tokens; factor in their intent: {ops}."
+        tools = self.TOOLS_WHEN_GROUNDED if grounded else self.TOOLS_WHEN_NOT
         return (
             "You are Strata, a local language assistant running fully offline on the "
             "user's own computer. You help with conversation, planning, writing, and code.\n"
+            f"{tools}\n"
             f"Operating mode: {zone} — respond in a manner that is {voice}.{token_line}\n"
             f"Recent context — {context}\n"
             "Be accurate and concise. If something isn't in the context or you are "
@@ -499,15 +549,23 @@ class LLMBrain:
             "return clean, working code."
         )
 
-    def respond(self, user_input, zone, tone, glyph_meanings, context):
-        """Return the model's reply, or None if the backend is unavailable / errors out."""
+    def respond(self, user_input, zone, tone, glyph_meanings, context,
+                grounded=False):
+        """Return the model's reply, or None if the backend is unavailable / errors out.
+
+        ``grounded`` says whether the console already fetched web or file
+        context for this turn; it changes what the model is told about
+        its own tools, not what it is asked.
+        """
         if not self.available:
             return None
         try:
             resp = ollama.chat(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": self._system_prompt(zone, tone, glyph_meanings, context)},
+                    {"role": "system", "content": self._system_prompt(
+                        zone, tone, glyph_meanings, context,
+                        grounded=grounded)},
                     {"role": "user", "content": user_input},
                 ],
                 keep_alive=self.keep_alive,
@@ -561,6 +619,7 @@ class StrataPipeline:
             persona.get("tone", {}),
             input_data.get("glyph_meanings", []),
             context,
+            grounded=bool(extra_context),
         )
         output["response"] = reply          # None when running in template mode
         output["brain"] = self.brain.available

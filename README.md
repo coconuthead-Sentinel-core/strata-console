@@ -176,6 +176,22 @@ Two things were changed so that wait is never mistaken for a hang again:
    twenty seconds is indistinguishable from a crash, and the owner read
    it that way, correctly.
 
+**If replies take a minute or more, it is memory, and the header says
+so.** Free RAM is shown at the top right at all times, and at startup
+the console says plainly when the machine is short — with the numbers:
+
+> ⚠ Low memory: 1,277 MB free, and llama3.2:3b wants about 2,225 MB —
+> 948 MB short. Replies will be slow (measured: 3 s with room, over
+> 100 s without). Close other programs, or switch to the lighter
+> llama3.2:1b.
+
+Measured on this 8 GB laptop, same code and same question: **2.9 s**
+with 978 MB free, **103 s** with 475 MB free and 3.3 GB in the pagefile.
+The app is the same at both readings; the machine is not. Closing a
+browser, Claude Code, or Voice Access typically returns over a gigabyte.
+The lighter model is a one-time `ollama pull llama3.2:1b` and roughly
+halves the requirement.
+
 If it stays on `loading…` well past a minute, check the daemon:
 
 ```bash

@@ -10,6 +10,53 @@ root cause and the guard.
 
 ---
 
+## [2.2.0] — 2026-09-02
+
+The owner asked, fairly, whether the app was using too much memory and
+whether it should simply be removed. The first answer is yes; the
+second is no. This release makes the first answer visible.
+
+### Fixed
+- **The model no longer denies a capability the console has** (FB-012).
+  Asked to search with web search off, llama3.2 answered "I can't browse
+  the internet" from its training — true of the model, false of the
+  app, and reported as the feature not working. The system prompt now
+  briefs the model on its tools both ways: with results present, "the
+  search has been done for you, cite it"; without, "tell the user to
+  tick 🌐 or say 'search the web'". Verified live: the same question
+  now searches and cites AccuWeather.
+- **Everyday search phrasing is recognised.** "search for", "look up",
+  "find out", "latest news", "do a search" and four more join the
+  trigger list. The owner had asked in words the list did not cover.
+
+### Added
+- **A RAM budget for the language model** (`strata_tools/model_budget.py`,
+  12 tests), the discipline the voice model has had since FB-002. Free
+  memory is measured against the size Ollama reports for the model. On
+  a starved machine the startup warm-up is **skipped** — loading 2.3 GB
+  into 475 MB of free RAM is what freezes the window — and the owner is
+  told in numbers: `⚠ Low memory: 1,277 MB free, and llama3.2:3b wants
+  about 2,225 MB — 948 MB short. Replies will be slow (measured: 3 s
+  with room, over 100 s without). Close other programs, or switch to
+  the lighter llama3.2:1b.`
+- **Free RAM on screen, always**, in the header. A figure seen every
+  day is one that can be read at a glance when it drops.
+- `LLMBrain.size_bytes` — resident size from `ollama list`, so the
+  budget is computed rather than assumed.
+
+### Measured, for the record
+Same code, same model, same question:
+
+| Free RAM | Pagefile in use | One reply |
+| --- | --- | --- |
+| 978 MB | — | 2.9 s |
+| 1,277 MB | — | 78 s |
+| 475 MB | 3.3 GB | 103.5 s |
+
+What was crowding the machine at the slow readings: three Claude Code
+processes (~1 GB), Windows Voice Access (253 MB), Defender (270 MB),
+Edge. The app was not broken at any of them.
+
 ## [2.1.0] — 2026-09-01
 
 ### Fixed

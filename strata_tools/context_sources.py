@@ -28,6 +28,12 @@ TRIGGER_PHRASES = (
     "search the web", "search the internet", "search online",
     "web search", "look online", "look this up", "look up online",
     "check the internet", "check online", "google ", "on the internet",
+    # Widened 2026-09-02 after the owner asked to search in words the
+    # list did not cover and the model answered "I can't browse". These
+    # are the phrasings a person actually uses; a search that was asked
+    # for and not run is the app ignoring him.
+    "search for", "do a search", "look up", "find out", "latest news",
+    "current news", "what's the latest", "browse the web", "web browse",
 )
 
 # One upload is held in memory for the life of the session. Two million

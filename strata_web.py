@@ -261,7 +261,21 @@ class Api:
         def work():
             brain = self.pipeline.brain
             try:
-                if not brain.available or brain.is_loaded():
+                if not brain.available:
+                    return
+                # Budget first. Measured 2026-09-02: 2.9 s per reply with
+                # 978 MB free, 103.5 s with 475 MB free, same code. On a
+                # starved machine the warm-up load is what freezes the
+                # window, so it is skipped and the owner is told why, in
+                # numbers -- same discipline as the voice model (FB-002).
+                from strata_tools import model_budget, voice_budget
+                _total, free = voice_budget.free_ram_mb()
+                budget = model_budget.plan(free, brain.size_bytes,
+                                           brain.model)
+                if budget["starved"]:
+                    self._push_note(budget["note"])
+                    return
+                if brain.is_loaded():
                     return
                 self._push_note("🧠 Warming the local model — about 20 "
                                 "seconds, once. You can type now; the "
@@ -279,14 +293,23 @@ class Api:
         threading.Thread(target=work, daemon=True).start()
 
     def model_state(self):
-        """Whether a reply will be fast or will wait for a load."""
+        """Whether a reply will be fast, will wait for a load, or will
+        crawl because the machine has no room for the model."""
         brain = self.pipeline.brain
         try:
             loaded = bool(brain.is_loaded())
         except Exception:
             loaded = False
+        try:
+            from strata_tools import model_budget, voice_budget
+            _total, free = voice_budget.free_ram_mb()
+            budget = model_budget.plan(free, brain.size_bytes, brain.model)
+        except Exception:
+            free, budget = 0, {"starved": False, "note": ""}
         return {"ok": True, "available": bool(brain.available),
-                "loaded": loaded}
+                "loaded": loaded, "freeMb": free,
+                "starved": bool(budget["starved"]),
+                "note": budget["note"]}
 
     def busy_for(self, text):
         """The status line to show while this turn runs.

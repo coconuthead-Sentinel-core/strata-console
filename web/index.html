@@ -30,6 +30,10 @@
   </div>
 
   <p id="status" class="status" role="status" aria-live="polite">Starting…</p>
+  <!-- Free RAM, always shown. A reply takes 3 s with room and over 100 s
+       without (measured); a figure seen every day is one that can be read
+       at a glance when it drops. -->
+  <output id="ram" class="size" title="Free physical memory"></output>
 </header>
 
 <main id="log" class="log" tabindex="0" role="log" aria-live="polite"

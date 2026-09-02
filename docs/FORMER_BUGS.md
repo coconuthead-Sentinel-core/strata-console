@@ -403,6 +403,45 @@ also a defect.**
 
 ---
 
+## FB-012 — The model said it could not search; the console could
+
+**Status:** fixed, guarded · **Found:** 2026-09-02 · **Severity:** major
+
+**What the owner saw.** "When it does start, it says it can't do a web
+search."
+
+**What was actually wrong.** Two things, stacked. He asked to search in
+words the trigger list did not cover ("can you search for…"), so no
+results were fetched. With no results and no briefing, llama3.2 answered
+from its training: "I don't have access to the internet." True of the
+model, false of the app. A capability that exists but is denied to the
+owner's face is a control that does nothing, wearing a sentence.
+
+**Guard.**
+- `LLMBrain._system_prompt(..., grounded=)` briefs the model both ways:
+  results present → "the search has been done for you, cite it";
+  absent → "tell the user to tick 🌐 or say 'search the web'; do NOT
+  say you are unable." `tests/test_model_readiness.py::ToolBriefingTests`
+  pins both texts and that they differ.
+- Nine everyday phrasings added to `TRIGGER_PHRASES`; every entry is
+  asserted to fire, and the owner's own wording is a test case.
+- Verified live: the reported question now searches and cites.
+
+**Companion finding — the machine, not the software (FB-011 addendum).**
+The same session measured the same reply at **2.9 s** (978 MB free),
+**78 s** (1,277 MB free) and **103.5 s** (475 MB free, 3.3 GB in the
+pagefile). Nothing in the code differed. The language model had no RAM
+budget while the voice model has had one since FB-002; it has one now
+(`strata_tools/model_budget.py`). On a starved machine the warm-up is
+skipped — loading 2.3 GB into 475 MB of free RAM is what freezes the
+window — and the owner is told what is free, what is wanted, and the
+two things he can do. Free RAM is in the header at all times.
+
+**The lesson:** *when the owner asks "is it the memory?", the app
+should already have told him.*
+
+---
+
 ## Near-misses — caught before shipping, recorded because the reasoning is the value
 
 ### NM-008 — The layout planner and its own checker disagreed
