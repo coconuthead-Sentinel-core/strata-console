@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 TURBO — Neural Activator / Dev Console for Quantum Nexus Forge
-Built for Shannon Bryan Kelly (Coconut Head)
+Built for Shannon Brian Kelley (Coconut Head)
 
 A terminal coding companion that keeps the project ON TRACK and catches DRIFT.
 It does three jobs:
